@@ -1,0 +1,39 @@
+import uuid
+from datetime import datetime
+from decimal import Decimal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ProductCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    barcode: str = Field(min_length=4, max_length=32)
+    description: str | None = Field(default=None, max_length=500)
+    price: Decimal | None = Field(default=None, ge=0)
+    quantity: int = Field(default=0, ge=0)
+
+
+class ProductUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    barcode: str | None = Field(default=None, min_length=4, max_length=32)
+    description: str | None = Field(default=None, max_length=500)
+    price: Decimal | None = Field(default=None, ge=0)
+    quantity: int | None = Field(default=None, ge=0)
+
+
+class ProductResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    barcode: str
+    description: str | None
+    price: Decimal | None
+    quantity: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProductListResponse(BaseModel):
+    items: list[ProductResponse]
+    total: int
