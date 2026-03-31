@@ -1,12 +1,12 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  PieChart,
-  Pie,
   Cell,
-  Tooltip,
-  Legend,
+  Pie,
+  PieChart,
   ResponsiveContainer,
+  Tooltip,
 } from "recharts";
+
 import type { CategoriaDist } from "@/hooks/useDashboard";
 
 const COLORS = [
@@ -29,7 +29,7 @@ export function CategoriaChart({ data }: Props) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Distribuição por Categoria</CardTitle>
+          <CardTitle className="text-base">Distribuicao por categoria</CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-center py-8 text-sm text-muted-foreground">
           Nenhum produto cadastrado.
@@ -41,7 +41,7 @@ export function CategoriaChart({ data }: Props) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Distribuição por Categoria</CardTitle>
+        <CardTitle className="text-base">Distribuicao por categoria</CardTitle>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={280}>
@@ -55,13 +55,11 @@ export function CategoriaChart({ data }: Props) {
               outerRadius={90}
               innerRadius={45}
               paddingAngle={2}
-              label={({ categoria, percent }) =>
-                `${categoria} (${(percent * 100).toFixed(0)}%)`
-              }
+              label={({ categoria, percent }) => `${categoria} (${(percent * 100).toFixed(0)}%)`}
               labelLine={{ stroke: "hsl(var(--muted-foreground))", strokeWidth: 1 }}
             >
-              {data.map((_, i) => (
-                <Cell key={i} fill={COLORS[i % COLORS.length]} />
+              {data.map((_, index) => (
+                <Cell key={index} fill={COLORS[index % COLORS.length]} />
               ))}
             </Pie>
             <Tooltip

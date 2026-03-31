@@ -1,14 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  BarChart,
   Bar,
-  XAxis,
-  YAxis,
+  BarChart,
   CartesianGrid,
-  Tooltip,
   Legend,
   ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from "recharts";
+
 import type { DivergenciaByInventario } from "@/hooks/useDashboard";
 
 interface Props {
@@ -20,7 +21,7 @@ export function DivergenciaChart({ data }: Props) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Divergências por Inventário</CardTitle>
+          <CardTitle className="text-base">Divergencias por inventario</CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-center py-8 text-sm text-muted-foreground">
           Nenhuma contagem realizada ainda.
@@ -32,7 +33,7 @@ export function DivergenciaChart({ data }: Props) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Divergências por Inventário</CardTitle>
+        <CardTitle className="text-base">Divergencias por inventario</CardTitle>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={280}>

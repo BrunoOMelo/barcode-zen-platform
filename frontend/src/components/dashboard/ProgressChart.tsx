@@ -1,15 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  BarChart,
   Bar,
-  XAxis,
-  YAxis,
+  BarChart,
   CartesianGrid,
-  Tooltip,
   Legend,
   ResponsiveContainer,
-  Cell,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from "recharts";
+
 import type { InventarioProgress } from "@/hooks/useDashboard";
 
 interface Props {
@@ -21,10 +21,10 @@ export function ProgressChart({ data }: Props) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Progresso de Contagem</CardTitle>
+          <CardTitle className="text-base">Progresso de contagem</CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-          Nenhum inventário com produtos vinculados.
+          Nenhum inventario com itens vinculados.
         </CardContent>
       </Card>
     );
@@ -33,7 +33,7 @@ export function ProgressChart({ data }: Props) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Progresso de Contagem</CardTitle>
+        <CardTitle className="text-base">Progresso de contagem</CardTitle>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={280}>
@@ -56,7 +56,7 @@ export function ProgressChart({ data }: Props) {
               }}
             />
             <Legend />
-            <Bar dataKey="contados" name="Contados" stackId="a" fill="hsl(var(--success))" radius={[0, 0, 0, 0]} />
+            <Bar dataKey="contados" name="Contados" stackId="a" fill="hsl(var(--success))" />
             <Bar dataKey="pendentes" name="Pendentes" stackId="a" fill="hsl(var(--muted))" radius={[0, 4, 4, 0]} />
           </BarChart>
         </ResponsiveContainer>

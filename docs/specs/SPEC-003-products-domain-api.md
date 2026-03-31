@@ -6,7 +6,7 @@
 |---|---|
 | ID | SPEC-003 |
 | Prioridade | P0 |
-| Status | Draft |
+| Status | Implemented |
 | Dono tecnico | Backend Lead |
 | Dono produto | Product Owner |
 | Dependencias | SPEC-001, SPEC-002 |
@@ -99,3 +99,22 @@ Query params minimos:
 | T003-05 | Criar migration de indices e constraints tenant-aware | Dados | 1d | T003-01 |
 | T003-06 | Criar suite de testes (unit + integracao) | Teste | 1d | T003-03 |
 | T003-07 | Documentar contrato OpenAPI e exemplos de erro | Documentacao | 0.5d | T003-04 |
+
+## Status de execucao
+
+| Task | Status | Evidencia |
+|---|---|---|
+| T003-01 | Done | `app/models/product.py` com campos de dominio (`sku`, `category`, `active`, `cost`) |
+| T003-02 | Done | `ProductRepository.list(...)` com `page`, `page_size`, `search`, `active`, `category` |
+| T003-03 | Done | `ProductService` com validacao de preco/custo e normalizacao de identificadores |
+| T003-04 | Done | Endpoints de produtos protegidos por `require_permission(...)` |
+| T003-05 | Done | Migration `20260327_0004_expand_products_domain_fields.py` |
+| T003-06 | Done | `backend/tests/test_products_domain_api.py` + `backend/tests/test_integration_tenant_authz.py` |
+| T003-07 | Done | `docs/products-api-contract.md` + examples em OpenAPI via `product_controller.py` |
+
+## Fechamento
+
+- Data de validacao: 2026-03-31
+- Evidencias de validacao:
+  - `python -m pytest -q backend/tests/test_products_domain_api.py backend/tests/test_integration_tenant_authz.py -k "product or tenant"` => 5 passed
+  - CRUD, filtros/paginacao e isolamento multi-tenant validados em testes de integracao

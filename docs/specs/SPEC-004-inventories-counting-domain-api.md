@@ -6,7 +6,7 @@
 |---|---|
 | ID | SPEC-004 |
 | Prioridade | P0 |
-| Status | Draft |
+| Status | In Progress (backend implementation complete) |
 | Dono tecnico | Backend Lead |
 | Dono produto | Product Owner |
 | Dependencias | SPEC-001, SPEC-002 |
@@ -91,3 +91,13 @@ Implementar o fluxo completo de inventario no backend com regras consistentes, i
 | T004-05 | Revisar migrations e indices de contagens/itens | Dados | 1d | T004-02 |
 | T004-06 | Testes de integracao (happy path + concorrencia) | Teste | 1.5d | T004-04 |
 | T004-07 | Contratos OpenAPI + exemplos de erro | Documentacao | 0.5d | T004-04 |
+
+## Progresso de implementacao (2026-03-27)
+
+- [x] T004-01 - Maquina de estados definida em `ADR-002`.
+- [x] T004-02 - Modelos e schemas de inventario/itens/contagens implementados.
+- [x] T004-03 - Services de status, itens e contagens implementados.
+- [x] T004-04 - Endpoints e autorizacao por permissao implementados.
+- [x] T004-05 - Migration e indices de contagens/itens implementados.
+- [x] T004-06 - Testes de integracao do dominio implementados e passando.
+- [x] T004-07 - Contrato de API documentado em `docs/inventories-api-contract.md`.

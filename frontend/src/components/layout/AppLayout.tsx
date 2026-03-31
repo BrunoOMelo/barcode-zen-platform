@@ -1,11 +1,13 @@
-import { ReactNode } from "react";
-import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "./AppSidebar";
-import { BottomNav } from "./BottomNav";
-import { useProfile } from "@/hooks/useProfile";
-import { useAuth } from "@/hooks/useAuth";
+import { type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
+
 import { UserAvatar } from "@/components/UserAvatar";
+import { AppSidebar } from "@/components/layout/AppSidebar";
+import { BottomNav } from "@/components/layout/BottomNav";
 import { Button } from "@/components/ui/button";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { clearPlatformSession } from "@/platform/storage";
+import { usePlatformSessionContext } from "@/platform/usePlatformSession";
 import { LogOut } from "lucide-react";
 
 interface AppLayoutProps {
@@ -14,8 +16,13 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children, title }: AppLayoutProps) {
-  const { data: profile } = useProfile();
-  const { signOut } = useAuth();
+  const navigate = useNavigate();
+  const { me } = usePlatformSessionContext();
+
+  const handleLogout = () => {
+    clearPlatformSession();
+    navigate("/platform/login", { replace: true });
+  };
 
   return (
     <SidebarProvider>
@@ -23,11 +30,17 @@ export function AppLayout({ children, title }: AppLayoutProps) {
       <SidebarInset>
         <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b bg-card px-4">
           <SidebarTrigger className="hidden md:flex" />
-          {title && <h1 className="text-lg font-semibold truncate flex-1">{title}</h1>}
+          {title && <h1 className="flex-1 truncate text-lg font-semibold">{title}</h1>}
           <div className="ml-auto flex items-center gap-3">
-            <span className="text-sm text-muted-foreground hidden sm:block">{profile?.apelido || profile?.nome}</span>
-            <UserAvatar nome={profile?.nome} fotoUrl={profile?.foto_perfil_url} />
-            <Button variant="ghost" size="icon" onClick={signOut} title="Sair" className="text-muted-foreground hover:text-destructive">
+            <span className="hidden text-sm text-muted-foreground sm:block">{me?.email ?? me?.user_id}</span>
+            <UserAvatar nome={me?.email ?? "Usuario"} fotoUrl={null} />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleLogout}
+              title="Sair"
+              className="text-muted-foreground hover:text-destructive"
+            >
               <LogOut className="h-4 w-4" />
             </Button>
           </div>

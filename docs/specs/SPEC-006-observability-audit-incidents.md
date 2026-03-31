@@ -6,7 +6,7 @@
 |---|---|
 | ID | SPEC-006 |
 | Prioridade | P1 |
-| Status | Draft |
+| Status | In Progress |
 | Dono tecnico | Platform Engineer |
 | Dono produto | Product Owner |
 | Dependencias | SPEC-002 |
@@ -75,3 +75,12 @@ Criar baseline operacional com monitoramento, auditoria e procedimento de incide
 | T006-04 | Implementar escrita de auditoria em eventos criticos | Backend | 1d | T006-03 |
 | T006-05 | Configurar dashboards e alertas minimos | Plataforma | 1d | T006-02 |
 | T006-06 | Criar runbook de incidente e operacao | Documentacao | 0.5d | T006-05 |
+
+## Progresso de implementacao (2026-03-31)
+
+- [x] T006-01 - Padrao de logging estruturado e `request_id` definido no middleware.
+- [~] T006-02 - Middleware de logging instrumentado; metricas ainda pendentes.
+- [ ] T006-03 - Migration de `audit_logs` pendente.
+- [ ] T006-04 - Escrita de auditoria em eventos criticos pendente.
+- [ ] T006-05 - Dashboards e alertas pendentes.
+- [ ] T006-06 - Runbook de incidente pendente.

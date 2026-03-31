@@ -39,15 +39,23 @@ Tasks fora da sprint (proxima janela):
 | T001-01 | Done (proposed, aguardando aceite PO) | `docs/adr/ADR-001-tenancy-model.md` |
 | T001-02 | Done | Migration `20260308_0002` aplicada com `alembic upgrade head` |
 | T001-03 | Done | `backend/scripts/backfill_tenants.py` (dry-run + run executados) |
-| T001-04 | Not started | - |
-| T001-05 | Not started | - |
-| T001-07 | Not started | - |
+| T001-04 | Done | Migration `20260327_0003` aplicada e `products.tenant_id` obrigatorio |
+| T001-05 | Done | Indices/unique tenant-aware aplicados (`ix_products_tenant_id`, `ix_products_tenant_id_name`, `uq_products_tenant_barcode`) |
+| T001-07 | Done | `docs/architecture.md` atualizado com tenancy, auth flow e RBAC |
 | T002-01 | Done | `RequestAuthMiddleware` registrado em `app/api/app.py` |
-| T002-02 | Not started | - |
-| T002-03 | Not started | - |
-| T002-04 | Not started | - |
-| T002-05 | Not started | - |
-| T002-06 | Not started | - |
+| T002-02 | Done | `RequestAuthMiddleware` valida `X-Tenant-Id` + membership ativo (`TenantContextService`) |
+| T002-03 | Done | Policy layer central em `app/core/policy.py` com `default deny` |
+| T002-04 | Done | Endpoint `GET /api/v1/me/context` em `app/controllers/me_controller.py` |
+| T002-05 | Done | Endpoint `POST /api/v1/me/switch-tenant` com auditoria em `app/services/me_service.py` |
+| T002-06 | Done | Erros de auth/permission padronizados com `message` + `code` e mensagens pt-BR |
+
+## 2.2 Status de execucao (tasks fora do escopo fechado)
+
+| Task | Status | Evidencia |
+|---|---|---|
+| T001-06 | Done | `backend/tests/test_integration_tenant_authz.py` (`test_cross_tenant_product_isolation_and_tenant_aware_uniqueness`) |
+| T002-07 | Done | `backend/tests/test_integration_tenant_authz.py` (roles/permissoes + membership scope) |
+| T002-08 | Done | `docs/security-auth-contracts.md` + README atualizado |
 
 ## 3. Time e papeis sugeridos
 

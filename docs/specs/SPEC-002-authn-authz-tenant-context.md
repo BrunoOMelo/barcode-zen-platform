@@ -6,7 +6,7 @@
 |---|---|
 | ID | SPEC-002 |
 | Prioridade | P0 |
-| Status | Draft |
+| Status | Implemented (Sprint 01) |
 | Dono tecnico | Backend Lead |
 | Dono produto | Product Owner |
 | Dependencias | SPEC-001 |

@@ -25,6 +25,8 @@ barcode-zen-platform/
 - Custom backend exceptions expose pt-BR messages for users.
 
 See details in `docs/architecture.md`.
+Security and API contracts are documented in `docs/security-auth-contracts.md`.
+Products API contract is documented in `docs/products-api-contract.md`.
 
 ## Prerequisites
 
@@ -67,7 +69,21 @@ npm install
 npm run dev
 ```
 
-Frontend URL: `http://localhost:8080`
+Frontend URL: `http://localhost:5173`
+
+Platform login (email/senha + tenant selector): `http://localhost:5173/login`
+Advanced mode with manual JWT token is still available for technical support and QA.
+
+Core frontend flow now runs backend-only for products/inventories/counts (no Supabase fallback).
+
+Optional Playwright MCP (browser-driven validation):
+
+```bash
+cd frontend
+npm run mcp:playwright
+```
+
+UI cutover validation report: `docs/frontend-cutover-validation.md`
 
 ## Optional: run backend + postgres with Docker Compose
 
@@ -85,6 +101,9 @@ docker compose up --build
 - `VITE_SUPABASE_PROJECT_ID`
 - `VITE_SUPABASE_PUBLISHABLE_KEY`
 - `VITE_SUPABASE_URL`
+- `VITE_PLATFORM_API_BASE_URL`
+- `VITE_PLATFORM_CUTOVER_PRODUCTS`
+- `VITE_PLATFORM_CUTOVER_INVENTORIES`
 
 ### Backend (`backend/.env`)
 
@@ -93,6 +112,10 @@ docker compose up --build
 - `API_V1_PREFIX`
 - `DB_ECHO`
 - `DATABASE_URL`
+- `AUTH_REQUIRED`
+- `AUTH_JWT_SECRET`
+- `AUTH_JWT_ALGORITHM`
+- `AUTH_ACCESS_TOKEN_TTL_MINUTES`
 
 ### Infra (`infra/.env`)
 

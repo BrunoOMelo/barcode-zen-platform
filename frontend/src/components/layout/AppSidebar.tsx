@@ -1,11 +1,6 @@
-import {
-  LayoutDashboard,
-  Package,
-  FileBarChart,
-  Settings,
-} from "lucide-react";
+import { LayoutDashboard, Package } from "lucide-react";
 import ninjaLogo from "@/assets/ninja-logo.jpg";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { EmpresaSwitcher } from "@/components/layout/EmpresaSwitcher";
 import {
@@ -23,15 +18,14 @@ import {
 } from "@/components/ui/sidebar";
 
 const mainNav = [
-  { title: "Dashboard", icon: LayoutDashboard, path: "/" },
-  { title: "Inventário", icon: Package, path: "/estoque" },
-  { title: "Relatórios", icon: FileBarChart, path: "/relatorios" },
-  { title: "Configurações", icon: Settings, path: "/configuracoes" },
+  { title: "Estoque", icon: Package, path: "/estoque" },
+  { title: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
 ];
 
 export function AppSidebar() {
   const navigate = useNavigate();
   const location = useLocation();
+
   return (
     <Sidebar>
       <SidebarHeader className="p-4">
@@ -39,7 +33,7 @@ export function AppSidebar() {
           <img src={ninjaLogo} alt="Ninja Stock" className="h-12 w-12 rounded-lg object-contain" />
           <div className="flex flex-col">
             <span className="text-sm font-bold text-sidebar-foreground">Ninja Stock</span>
-            <span className="text-xs text-sidebar-foreground/60">Gestão de Inventário</span>
+            <span className="text-xs text-sidebar-foreground/60">Gestao de Inventario</span>
           </div>
         </div>
         <div className="mt-3">
@@ -57,11 +51,7 @@ export function AppSidebar() {
               {mainNav.map((item) => (
                 <SidebarMenuItem key={item.path}>
                   <SidebarMenuButton
-                    isActive={
-                      item.path === "/"
-                        ? location.pathname === "/"
-                        : location.pathname.startsWith(item.path)
-                    }
+                    isActive={location.pathname.startsWith(item.path)}
                     onClick={() => navigate(item.path)}
                     tooltip={item.title}
                   >

@@ -1,28 +1,21 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import {
-  ScanBarcode,
-  Check,
-  AlertTriangle,
-  Package,
-  ArrowLeft,
-} from "lucide-react";
-import {
+  type InventarioProduto,
   useInventario,
   useInventarioProdutos,
   useInventarioStats,
   useRegistrarContagem,
   useUpdateInventarioStatus,
-  type InventarioProduto,
 } from "@/hooks/useInventarios";
-import { supabase } from "@/integrations/supabase/client";
-import { useProfile } from "@/hooks/useProfile";
+import { AlertTriangle, ArrowLeft, Check, ScanBarcode } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Contagem() {
@@ -33,7 +26,6 @@ export default function Contagem() {
   const stats = useInventarioStats(id);
   const registrarContagem = useRegistrarContagem();
   const updateStatus = useUpdateInventarioStatus();
-  const { data: profile } = useProfile();
 
   const [barcode, setBarcode] = useState("");
   const [quantidade, setQuantidade] = useState("");
@@ -48,65 +40,50 @@ export default function Contagem() {
   const barcodeRef = useRef<HTMLInputElement>(null);
   const quantidadeRef = useRef<HTMLInputElement>(null);
 
-  // Auto-focus barcode field
   useEffect(() => {
     barcodeRef.current?.focus();
   }, []);
 
-  // Buscar produto por código de barras
   const buscarProduto = useCallback(
-    async (code: string) => {
-      if (!code.trim() || !items || !profile?.empresa_id) return;
+    (code: string) => {
+      if (!code.trim() || !items) return;
 
       setError("");
       setFoundItem(null);
 
-      // Search in inventario_produtos via produto's barcode or SKU
-      const { data: produtos } = await supabase
-        .from("produtos")
-        .select("id")
-        .eq("empresa_id", profile.empresa_id)
-        .or(`codigo_barras.eq.${code},sku.eq.${code}`)
-        .limit(1);
-
-      if (!produtos?.length) {
-        setError("Produto não encontrado");
-        toast.error("Produto não encontrado");
-        return;
-      }
-
-      const produtoId = produtos[0].id;
-      const item = items.find((i) => i.produto_id === produtoId);
+      const normalizedCode = code.trim().toLowerCase();
+      const item = items.find((inventoryItem) => {
+        const sku = inventoryItem.produtos?.sku?.trim().toLowerCase();
+        const barcodeValue = inventoryItem.produtos?.codigo_barras?.trim().toLowerCase();
+        return sku === normalizedCode || barcodeValue === normalizedCode;
+      });
 
       if (!item) {
-        setError("Produto não faz parte deste inventário");
-        toast.error("Produto não faz parte deste inventário");
+        setError("Produto nao encontrado");
+        toast.error("Produto nao encontrado");
         return;
       }
 
       setFoundItem(item);
       setQuantidade("");
-      // Focus quantity field
       setTimeout(() => quantidadeRef.current?.focus(), 50);
     },
-    [items, profile]
+    [items],
   );
 
-  // Handle barcode scanner input (Enter key)
-  const handleBarcodeKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
+  const handleBarcodeKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
       buscarProduto(barcode);
     }
   };
 
-  // Register count
   const handleConfirmar = async () => {
     if (!foundItem || !id) return;
 
     const qty = Number(quantidade);
-    if (isNaN(qty) || qty < 0) {
-      toast.error("Quantidade inválida");
+    if (Number.isNaN(qty) || qty < 0) {
+      toast.error("Quantidade invalida");
       return;
     }
 
@@ -125,32 +102,29 @@ export default function Contagem() {
         status: qty === foundItem.estoque_sistema ? "ok" : "divergente",
       });
 
-      // Reset for next scan
       setFoundItem(null);
       setBarcode("");
       setQuantidade("");
       setError("");
 
-      toast.success("Contagem registrada!");
-
-      // Return focus to barcode
+      toast.success("Contagem registrada");
       setTimeout(() => barcodeRef.current?.focus(), 50);
     } catch {
       toast.error("Erro ao registrar contagem");
     }
   };
 
-  const handleQuantidadeKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleConfirmar();
+  const handleQuantidadeKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void handleConfirmar();
     }
   };
 
   const handleFinalizarContagem = async () => {
     if (!id) return;
     await updateStatus.mutateAsync({ id, status: "em_analise" });
-    toast.success("Contagem finalizada! Acesse Divergências para análise.");
+    toast.success("Contagem finalizada. Acesse Divergencias para analise.");
     navigate(`/inventarios/${id}/divergencias`);
   };
 
@@ -158,9 +132,8 @@ export default function Contagem() {
 
   return (
     <AppLayout title={inventario?.nome ?? "Contagem"}>
-      {/* Progress bar */}
       <div className="mb-4">
-        <div className="flex items-center justify-between text-sm mb-1">
+        <div className="mb-1 flex items-center justify-between text-sm">
           <span className="text-muted-foreground">
             {stats.contados} de {stats.total} produtos contados
           </span>
@@ -170,21 +143,18 @@ export default function Contagem() {
       </div>
 
       <div className="mx-auto max-w-lg space-y-4">
-        {/* Barcode Input */}
         <Card className={error ? "border-destructive" : foundItem ? "border-success" : ""}>
           <CardContent className="space-y-4 pt-6">
             <div>
-              <label className="mb-2 block text-sm font-medium text-muted-foreground">
-                Código de Barras / SKU
-              </label>
+              <label className="mb-2 block text-sm font-medium text-muted-foreground">Codigo de Barras / SKU</label>
               <div className="relative">
                 <ScanBarcode className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   ref={barcodeRef}
-                  placeholder="Leia ou digite o código..."
+                  placeholder="Leia ou digite o codigo..."
                   className="scanner-input h-14 pl-11 text-lg"
                   value={barcode}
-                  onChange={(e) => setBarcode(e.target.value)}
+                  onChange={(event) => setBarcode(event.target.value)}
                   onKeyDown={handleBarcodeKeyDown}
                   autoComplete="off"
                 />
@@ -197,28 +167,23 @@ export default function Contagem() {
               )}
             </div>
 
-            {/* Product found */}
             {foundItem && foundItem.produtos && (
               <>
                 <div className="rounded-lg bg-muted p-3">
                   <p className="font-semibold">{foundItem.produtos.descricao}</p>
                   <div className="mt-1 flex gap-3 text-xs text-muted-foreground">
                     {foundItem.produtos.sku && <span>SKU: {foundItem.produtos.sku}</span>}
-                    {foundItem.produtos.codigo_barras && (
-                      <span>EAN: {foundItem.produtos.codigo_barras}</span>
-                    )}
+                    {foundItem.produtos.codigo_barras && <span>EAN: {foundItem.produtos.codigo_barras}</span>}
                   </div>
                   {foundItem.estoque_contado !== null && (
                     <Badge variant="outline" className="mt-2">
-                      Última contagem: {foundItem.estoque_contado}
+                      Ultima contagem: {foundItem.estoque_contado}
                     </Badge>
                   )}
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-muted-foreground">
-                    Quantidade Contada
-                  </label>
+                  <label className="mb-2 block text-sm font-medium text-muted-foreground">Quantidade Contada</label>
                   <Input
                     ref={quantidadeRef}
                     type="number"
@@ -226,13 +191,13 @@ export default function Contagem() {
                     className="h-14 text-center text-2xl font-bold"
                     min={0}
                     value={quantidade}
-                    onChange={(e) => setQuantidade(e.target.value)}
+                    onChange={(event) => setQuantidade(event.target.value)}
                     onKeyDown={handleQuantidadeKeyDown}
                   />
                 </div>
 
                 <Button
-                  className="h-14 w-full text-lg font-semibold touch-target"
+                  className="touch-target h-14 w-full text-lg font-semibold"
                   onClick={handleConfirmar}
                   disabled={registrarContagem.isPending || quantidade === ""}
                 >
@@ -243,59 +208,41 @@ export default function Contagem() {
           </CardContent>
         </Card>
 
-        {/* Last counted feedback */}
         {lastCounted && (
-          <Card
-            className={
-              lastCounted.status === "ok"
-                ? "border-success bg-success/5"
-                : "border-warning bg-warning/5"
-            }
-          >
+          <Card className={lastCounted.status === "ok" ? "border-success bg-success/5" : "border-warning bg-warning/5"}>
             <CardContent className="flex items-center gap-3 py-4">
               {lastCounted.status === "ok" ? (
-                <Check className="h-6 w-6 text-success shrink-0" />
+                <Check className="h-6 w-6 shrink-0 text-success" />
               ) : (
-                <AlertTriangle className="h-6 w-6 text-warning shrink-0" />
+                <AlertTriangle className="h-6 w-6 shrink-0 text-warning" />
               )}
               <div className="min-w-0 flex-1">
-                <p className="font-medium truncate text-sm">{lastCounted.descricao}</p>
+                <p className="truncate text-sm font-medium">{lastCounted.descricao}</p>
                 <p className="text-xs text-muted-foreground">
                   Quantidade: {lastCounted.quantidade}
-                  {lastCounted.status === "divergente" && " — Divergente"}
+                  {lastCounted.status === "divergente" && " - Divergente"}
                 </p>
               </div>
             </CardContent>
           </Card>
         )}
 
-        {/* Waiting state when no product found */}
         {!foundItem && !error && (
           <Card>
             <CardContent className="py-6 text-center text-muted-foreground">
               <ScanBarcode className="mx-auto mb-2 h-8 w-8 opacity-40" />
-              <p className="text-sm">Aguardando leitura de código de barras...</p>
+              <p className="text-sm">Aguardando leitura de codigo de barras...</p>
             </CardContent>
           </Card>
         )}
 
-        {/* Actions */}
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            className="flex-1"
-            onClick={() => navigate("/inventarios")}
-          >
+          <Button variant="outline" className="flex-1" onClick={() => navigate("/inventarios")}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Voltar
           </Button>
           {stats.contados > 0 && (
-            <Button
-              variant="default"
-              className="flex-1"
-              onClick={handleFinalizarContagem}
-              disabled={updateStatus.isPending}
-            >
+            <Button variant="default" className="flex-1" onClick={handleFinalizarContagem} disabled={updateStatus.isPending}>
               Finalizar Contagem
             </Button>
           )}

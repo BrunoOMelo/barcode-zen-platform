@@ -1,26 +1,28 @@
-import { LayoutDashboard, Package, FileBarChart, Menu } from "lucide-react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { cn } from "@/lib/utils";
+import { LayoutDashboard, LogOut, Menu, Package } from "lucide-react";
 import { useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { useAuth } from "@/hooks/useAuth";
-import { LogOut, Settings } from "lucide-react";
+import { clearPlatformSession } from "@/platform/storage";
+import { cn } from "@/lib/utils";
 
 const tabs = [
-  { title: "Dashboard", icon: LayoutDashboard, path: "/" },
-  { title: "Inventário", icon: Package, path: "/estoque" },
-  { title: "Relatórios", icon: FileBarChart, path: "/relatorios" },
+  { title: "Estoque", icon: Package, path: "/estoque" },
+  { title: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
   { title: "Mais", icon: Menu, path: "__more__" },
 ];
 
 export function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signOut } = useAuth();
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const isActive = (path: string) =>
-    path === "/" ? location.pathname === "/" : location.pathname.startsWith(path);
+  const isActive = (path: string) => location.pathname.startsWith(path);
+
+  const handleLogout = () => {
+    clearPlatformSession();
+    navigate("/login", { replace: true });
+  };
 
   return (
     <>
@@ -38,15 +40,8 @@ export function BottomNav() {
                 <SheetContent side="bottom" className="rounded-t-2xl pb-8">
                   <div className="flex flex-col gap-2 pt-4">
                     <button
-                      className="flex items-center gap-3 rounded-lg p-3 text-left hover:bg-muted"
-                      onClick={() => { navigate("/configuracoes"); setMoreOpen(false); }}
-                    >
-                      <Settings className="h-5 w-5" />
-                      <span>Configurações</span>
-                    </button>
-                    <button
                       className="flex items-center gap-3 rounded-lg p-3 text-left text-destructive hover:bg-muted"
-                      onClick={signOut}
+                      onClick={handleLogout}
                     >
                       <LogOut className="h-5 w-5" />
                       <span>Sair</span>
@@ -63,7 +58,7 @@ export function BottomNav() {
               onClick={() => navigate(tab.path)}
               className={cn(
                 "flex flex-col items-center gap-0.5 px-2 py-1 transition-colors",
-                isActive(tab.path) ? "text-accent" : "text-muted-foreground"
+                isActive(tab.path) ? "text-accent" : "text-muted-foreground",
               )}
             >
               <tab.icon className="h-5 w-5" />
@@ -72,7 +67,6 @@ export function BottomNav() {
           );
         })}
       </nav>
-      {/* Spacer so content doesn't hide behind bottom nav */}
       <div className="h-16 md:hidden" />
     </>
   );

@@ -1,0 +1,18 @@
+{
+  "apiBaseUrl": "http://127.0.0.1:8000",
+  "admin": {
+    "userId": "11111111-1111-1111-1111-111111111111",
+    "email": "admin-e2e@barcodezen.local",
+    "password": "AdminE2E@123",
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMTExMTExMS0xMTExLTExMTEtMTExMS0xMTExMTExMTExMTEiLCJlbWFpbCI6ImFkbWluLWUyZUBiYXJjb2RlemVuLmxvY2FsIn0.bzLsgSuVXikzphoR75GmJxhjgPo81xvh87XIlkoiN2A",
+    "tenantAlphaId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
+    "tenantBetaId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2"
+  },
+  "viewer": {
+    "userId": "22222222-2222-2222-2222-222222222222",
+    "email": "viewer-e2e@barcodezen.local",
+    "password": "ViewerE2E@123",
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyMjIyMjIyMi0yMjIyLTIyMjItMjIyMi0yMjIyMjIyMjIyMjIiLCJlbWFpbCI6InZpZXdlci1lMmVAYmFyY29kZXplbi5sb2NhbCJ9.nx13_SeRv91kIxrfNcQsTaRTcBL261e5grehJ6VXI4E",
+    "tenantAlphaId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"
+  }
+}

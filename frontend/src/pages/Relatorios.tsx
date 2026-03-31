@@ -1,216 +1,341 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+
+import { CategoriaChart } from "@/components/dashboard/CategoriaChart";
+import { DivergenciaChart } from "@/components/dashboard/DivergenciaChart";
+import { ProgressChart } from "@/components/dashboard/ProgressChart";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { FileBarChart, Download, Loader2 } from "lucide-react";
-import { useInventarios, useInventarioProdutos, useContagens } from "@/hooks/useInventarios";
-import { useProdutos } from "@/hooks/useProdutos";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useDashboardStats } from "@/hooks/useDashboard";
+import { useContagens, useInventarioProdutos, useInventarios } from "@/hooks/useInventarios";
 import { exportToCSV, exportToExcel, exportToPDF } from "@/lib/export";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ClipboardList,
+  Download,
+  FileBarChart,
+  Loader2,
+  Package,
+} from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
-import { useProfile } from "@/hooks/useProfile";
 
 type ReportType = "inventario" | "divergencias" | "nao_contados" | "historico";
 type ExportFormat = "csv" | "excel" | "pdf";
 
+const statusLabel: Record<string, string> = {
+  criado: "Criado",
+  em_contagem: "Em contagem",
+  em_recontagem: "Em recontagem",
+  em_analise: "Em analise",
+  finalizado: "Finalizado",
+};
+
 export default function Relatorios() {
   const { data: inventarios } = useInventarios();
-  const { data: profile } = useProfile();
+  const { data: dashboard, isLoading: loadingDashboard } = useDashboardStats();
   const [selectedInv, setSelectedInv] = useState<string>("");
-  const [loading, setLoading] = useState(false);
+  const { data: selectedItems = [] } = useInventarioProdutos(selectedInv || undefined);
+  const { data: selectedCounts = [] } = useContagens(selectedInv || undefined);
+  const [loadingExport, setLoadingExport] = useState(false);
+
+  const selectedInventorySummary = useMemo(() => {
+    const total = selectedItems.length;
+    const counted = selectedItems.filter((item) => item.estoque_contado !== null).length;
+    const pending = total - counted;
+    const divergent = selectedItems.filter((item) => item.status === "divergente").length;
+    const countedWithoutDivergence = Math.max(0, counted - divergent);
+    const accuracy = counted > 0 ? (countedWithoutDivergence / counted) * 100 : 0;
+    return { total, counted, pending, divergent, accuracy };
+  }, [selectedItems]);
+
+  const managerialCards = [
+    {
+      title: "Inventarios ativos",
+      value: dashboard?.inventariosAtivos ?? 0,
+      icon: ClipboardList,
+      color: "text-primary",
+    },
+    {
+      title: "Produtos ativos",
+      value: dashboard?.totalProdutos ?? 0,
+      icon: Package,
+      color: "text-blue-500",
+    },
+    {
+      title: "Itens contados",
+      value: dashboard?.produtosContados ?? 0,
+      icon: CheckCircle2,
+      color: "text-emerald-600",
+    },
+    {
+      title: "Divergencias abertas",
+      value: dashboard?.divergencias ?? 0,
+      icon: AlertTriangle,
+      color: "text-amber-600",
+    },
+  ];
+
+  const reports: { type: ReportType; title: string; description: string }[] = [
+    {
+      type: "inventario",
+      title: "Inventario completo",
+      description: "Posicao completa de itens, contagens e status.",
+    },
+    {
+      type: "divergencias",
+      title: "Divergencias",
+      description: "Itens com diferenca entre estoque sistema e contado.",
+    },
+    {
+      type: "nao_contados",
+      title: "Nao contados",
+      description: "Itens ainda pendentes de contagem.",
+    },
+    {
+      type: "historico",
+      title: "Historico de contagens",
+      description: "Rastro operacional das contagens realizadas.",
+    },
+  ];
 
   const generateReport = async (type: ReportType, format: ExportFormat) => {
-    if (!profile?.empresa_id) {
-      toast.error("Empresa não configurada");
-      return;
-    }
-
-    setLoading(true);
+    setLoadingExport(true);
     try {
       let data: Record<string, unknown>[] = [];
       let filename = "";
       let title = "";
 
       if (type === "inventario" && selectedInv) {
-        const { data: items } = await supabase
-          .from("inventario_produtos")
-          .select("*, produtos(descricao, sku, codigo_barras, categoria)")
-          .eq("inventario_id", selectedInv);
-
-        data = (items ?? []).map((i: any) => ({
-          Produto: i.produtos?.descricao ?? "",
-          SKU: i.produtos?.sku ?? "",
-          "Cód. Barras": i.produtos?.codigo_barras ?? "",
-          Categoria: i.produtos?.categoria ?? "",
-          "Estoque Sistema": i.estoque_sistema,
-          "Estoque Contado": i.estoque_contado ?? "Não contado",
-          Divergência: i.divergencia ?? "",
-          Status: i.status,
+        data = selectedItems.map((item) => ({
+          Produto: item.produtos?.descricao ?? "",
+          SKU: item.produtos?.sku ?? "",
+          "Cod. barras": item.produtos?.codigo_barras ?? "",
+          "Estoque sistema": item.estoque_sistema,
+          "Estoque contado": item.estoque_contado ?? "Nao contado",
+          Divergencia: item.divergencia ?? "",
+          Status: item.status,
         }));
-        filename = "relatorio-inventario";
-        title = "Relatório de Inventário Completo";
+        filename = "relatorio-inventario-completo";
+        title = "Relatorio de inventario completo";
       } else if (type === "divergencias" && selectedInv) {
-        const { data: items } = await supabase
-          .from("inventario_produtos")
-          .select("*, produtos(descricao, sku, codigo_barras)")
-          .eq("inventario_id", selectedInv)
-          .eq("status", "divergente");
-
-        data = (items ?? []).map((i: any) => ({
-          Produto: i.produtos?.descricao ?? "",
-          SKU: i.produtos?.sku ?? "",
-          "Cód. Barras": i.produtos?.codigo_barras ?? "",
-          "Estoque Sistema": i.estoque_sistema,
-          "Estoque Contado": i.estoque_contado,
-          Divergência: i.divergencia,
-          "Divergência %": i.estoque_sistema > 0
-            ? `${((i.divergencia / i.estoque_sistema) * 100).toFixed(1)}%`
-            : "N/A",
+        const divergentItems = selectedItems.filter((item) => item.status === "divergente");
+        data = divergentItems.map((item) => ({
+          Produto: item.produtos?.descricao ?? "",
+          SKU: item.produtos?.sku ?? "",
+          "Cod. barras": item.produtos?.codigo_barras ?? "",
+          "Estoque sistema": item.estoque_sistema,
+          "Estoque contado": item.estoque_contado,
+          Divergencia: item.divergencia,
+          "Divergencia %":
+            item.estoque_sistema > 0
+              ? `${(((item.divergencia ?? 0) / item.estoque_sistema) * 100).toFixed(1)}%`
+              : "N/A",
         }));
         filename = "relatorio-divergencias";
-        title = "Relatório de Divergências";
+        title = "Relatorio de divergencias";
       } else if (type === "nao_contados" && selectedInv) {
-        const { data: items } = await supabase
-          .from("inventario_produtos")
-          .select("*, produtos(descricao, sku, codigo_barras, categoria)")
-          .eq("inventario_id", selectedInv)
-          .is("estoque_contado", null);
-
-        data = (items ?? []).map((i: any) => ({
-          Produto: i.produtos?.descricao ?? "",
-          SKU: i.produtos?.sku ?? "",
-          "Cód. Barras": i.produtos?.codigo_barras ?? "",
-          Categoria: i.produtos?.categoria ?? "",
-          "Estoque Sistema": i.estoque_sistema,
+        const pendingItems = selectedItems.filter((item) => item.estoque_contado === null);
+        data = pendingItems.map((item) => ({
+          Produto: item.produtos?.descricao ?? "",
+          SKU: item.produtos?.sku ?? "",
+          "Cod. barras": item.produtos?.codigo_barras ?? "",
+          "Estoque sistema": item.estoque_sistema,
         }));
         filename = "relatorio-nao-contados";
-        title = "Produtos Não Contados";
+        title = "Relatorio de itens nao contados";
       } else if (type === "historico" && selectedInv) {
-        const { data: contagens } = await supabase
-          .from("contagens")
-          .select("*, produtos(descricao, sku, codigo_barras)")
-          .eq("inventario_id", selectedInv)
-          .order("data_contagem", { ascending: false });
-
-        data = (contagens ?? []).map((c: any) => ({
-          Produto: c.produtos?.descricao ?? "",
-          SKU: c.produtos?.sku ?? "",
-          Quantidade: c.quantidade,
-          Tipo: c.tipo === "primeira" ? "1ª Contagem" : "Recontagem",
-          "Data/Hora": new Date(c.data_contagem).toLocaleString("pt-BR"),
+        data = selectedCounts.map((count) => ({
+          Produto: count.produtos?.descricao ?? "",
+          SKU: count.produtos?.sku ?? "",
+          Quantidade: count.quantidade,
+          Tipo: count.tipo === "primeira" ? "1a contagem" : "Recontagem",
+          "Data/hora": new Date(count.data_contagem).toLocaleString("pt-BR"),
         }));
-        filename = "relatorio-historico";
-        title = "Histórico de Contagens";
+        filename = "relatorio-historico-contagens";
+        title = "Historico de contagens";
       } else {
-        toast.error("Selecione um inventário");
-        setLoading(false);
+        toast.error("Selecione um inventario para gerar relatorio.");
+        setLoadingExport(false);
         return;
       }
 
       if (!data.length) {
-        toast.error("Nenhum dado encontrado para este relatório");
-        setLoading(false);
+        toast.error("Nenhum dado encontrado para o relatorio selecionado.");
+        setLoadingExport(false);
         return;
       }
 
       if (format === "csv") exportToCSV(data, filename);
       else if (format === "excel") exportToExcel(data, filename);
-      else if (format === "pdf") exportToPDF(data, filename, title);
+      else exportToPDF(data, filename, title);
 
-      toast.success(`Relatório exportado em ${format.toUpperCase()}`);
-    } catch (err: any) {
-      toast.error(`Erro: ${err.message}`);
+      toast.success(`Relatorio exportado em ${format.toUpperCase()}.`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Falha ao gerar relatorio.";
+      toast.error(`Erro: ${message}`);
     } finally {
-      setLoading(false);
+      setLoadingExport(false);
     }
   };
 
-  const reports: { type: ReportType; title: string; description: string }[] = [
-    {
-      type: "inventario",
-      title: "Inventário Completo",
-      description: "Todos os produtos e status de contagem",
-    },
-    {
-      type: "divergencias",
-      title: "Divergências",
-      description: "Produtos com diferença entre sistema e contagem",
-    },
-    {
-      type: "nao_contados",
-      title: "Produtos Não Contados",
-      description: "Produtos pendentes de contagem",
-    },
-    {
-      type: "historico",
-      title: "Histórico de Contagens",
-      description: "Log completo de todas as contagens realizadas",
-    },
-  ];
-
   return (
-    <AppLayout title="Relatórios">
-      {/* Inventory selector */}
-      <Card className="mb-4">
-        <CardContent className="pt-4">
-          <label className="mb-2 block text-sm font-medium">Selecione o Inventário</label>
-          <Select value={selectedInv} onValueChange={setSelectedInv}>
-            <SelectTrigger>
-              <SelectValue placeholder="Selecione um inventário..." />
-            </SelectTrigger>
-            <SelectContent>
-              {inventarios?.map((inv) => (
-                <SelectItem key={inv.id} value={inv.id}>
-                  {inv.nome}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </CardContent>
-      </Card>
+    <AppLayout title="Dashboard Gerencial">
+      <div className="space-y-6">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle>Visao executiva de inventario</CardTitle>
+            <CardDescription>
+              Indicadores operacionais para decisao gerencial e acompanhamento de produtividade.
+            </CardDescription>
+          </CardHeader>
+        </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {reports.map((report) => (
-          <Card key={report.type}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <div>
-                <CardTitle className="text-base">{report.title}</CardTitle>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {report.description}
-                </p>
-              </div>
-              <FileBarChart className="h-5 w-5 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2">
-                {(["csv", "excel", "pdf"] as ExportFormat[]).map((fmt) => (
-                  <Button
-                    key={fmt}
-                    variant="outline"
-                    size="sm"
-                    disabled={!selectedInv || loading}
-                    onClick={() => generateReport(report.type, fmt)}
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {managerialCards.map((card) => (
+            <Card key={card.title}>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">{card.title}</CardTitle>
+                <card.icon className={`h-5 w-5 ${card.color}`} />
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-semibold">{loadingDashboard ? "..." : card.value}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <ProgressChart data={dashboard?.progressData ?? []} />
+          <DivergenciaChart data={dashboard?.divergenciaData ?? []} />
+        </div>
+        <CategoriaChart data={dashboard?.categoriaData ?? []} />
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Inventarios recentes</CardTitle>
+            <CardDescription>Ultimos inventarios para acompanhamento de status e ritmo de operacao.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!dashboard?.recentInventarios?.length ? (
+              <p className="py-4 text-sm text-muted-foreground">Nenhum inventario recente encontrado.</p>
+            ) : (
+              <div className="space-y-2">
+                {dashboard.recentInventarios.map((inventory) => (
+                  <div
+                    key={inventory.id}
+                    className="flex items-center justify-between rounded-md border bg-muted/20 px-3 py-2"
                   >
-                    {loading ? (
-                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                    ) : (
-                      <Download className="mr-1 h-3 w-3" />
-                    )}
-                    {fmt.toUpperCase()}
-                  </Button>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{inventory.nome}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Criado em {new Date(inventory.created_at).toLocaleDateString("pt-BR")}
+                      </p>
+                    </div>
+                    <Badge variant="secondary">{statusLabel[inventory.status] ?? inventory.status}</Badge>
+                  </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-        ))}
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Centro de exportacao</CardTitle>
+            <CardDescription>
+              Gere arquivos para auditoria, apresentacao executiva e acompanhamento operacional.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Inventario para exportacao</label>
+              <Select value={selectedInv} onValueChange={setSelectedInv}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um inventario..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {inventarios?.map((inventory) => (
+                    <SelectItem key={inventory.id} value={inventory.id}>
+                      {inventory.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {selectedInv ? (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <Card className="border-dashed">
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">Total de itens</p>
+                    <p className="text-xl font-semibold">{selectedInventorySummary.total}</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-dashed">
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">Contados</p>
+                    <p className="text-xl font-semibold">{selectedInventorySummary.counted}</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-dashed">
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">Pendentes</p>
+                    <p className="text-xl font-semibold">{selectedInventorySummary.pending}</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-dashed">
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">Divergentes</p>
+                    <p className="text-xl font-semibold">{selectedInventorySummary.divergent}</p>
+                  </CardContent>
+                </Card>
+                <Card className="border-dashed">
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">Acuracia</p>
+                    <p className="text-xl font-semibold">{selectedInventorySummary.accuracy.toFixed(1)}%</p>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : null}
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {reports.map((report) => (
+                <Card key={report.type}>
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <div>
+                      <CardTitle className="text-base">{report.title}</CardTitle>
+                      <CardDescription className="mt-1">{report.description}</CardDescription>
+                    </div>
+                    <FileBarChart className="h-5 w-5 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2">
+                      {(["csv", "excel", "pdf"] as ExportFormat[]).map((format) => (
+                        <Button
+                          key={format}
+                          variant="outline"
+                          size="sm"
+                          disabled={!selectedInv || loadingExport}
+                          onClick={() => generateReport(report.type, format)}
+                        >
+                          {loadingExport ? (
+                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                          ) : (
+                            <Download className="mr-1 h-3 w-3" />
+                          )}
+                          {format.toUpperCase()}
+                        </Button>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </AppLayout>
   );

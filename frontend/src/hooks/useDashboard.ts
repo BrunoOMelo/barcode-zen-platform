@@ -1,6 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { useProfile } from "@/hooks/useProfile";
+
+import { getDashboardSummaryFromSession } from "@/platform/api";
+import { platformFlags } from "@/platform/flags";
+import { loadPlatformSession } from "@/platform/storage";
+
+type BackendInventoryStatus = "created" | "counting" | "recounting" | "review" | "finished";
+type LegacyInventoryStatus = "criado" | "em_contagem" | "em_recontagem" | "em_analise" | "finalizado";
+
+interface DashboardInventory {
+  id: string;
+  nome: string;
+  status: LegacyInventoryStatus;
+  created_at: string;
+}
 
 export interface InventarioProgress {
   nome: string;
@@ -21,145 +33,67 @@ export interface CategoriaDist {
   quantidade: number;
 }
 
+function mapInventoryStatus(status: BackendInventoryStatus): LegacyInventoryStatus {
+  if (status === "created") return "criado";
+  if (status === "counting") return "em_contagem";
+  if (status === "recounting") return "em_recontagem";
+  if (status === "review") return "em_analise";
+  return "finalizado";
+}
+
+function ensureDashboardCutoverEnabled() {
+  if (!platformFlags.cutoverProducts || !platformFlags.cutoverInventories) {
+    throw new Error("Cutover de dashboard requer modulos de produtos e inventarios ativos via backend.");
+  }
+}
+
 export function useDashboardStats() {
-  const { data: profile } = useProfile();
+  const tenantId = loadPlatformSession()?.selectedTenantId;
 
   return useQuery({
-    queryKey: ["dashboard-stats", profile?.empresa_id],
+    queryKey: ["dashboard-stats", tenantId],
     queryFn: async () => {
-      if (!profile?.empresa_id) {
-        return {
-          inventariosAtivos: 0,
-          inventariosFinalizados: 0,
-          totalProdutos: 0,
-          produtosContados: 0,
-          divergencias: 0,
-          recentInventarios: [] as any[],
-          progressData: [] as InventarioProgress[],
-          divergenciaData: [] as DivergenciaByInventario[],
-          categoriaData: [] as CategoriaDist[],
-        };
-      }
+      ensureDashboardCutoverEnabled();
+      const summary = await getDashboardSummaryFromSession();
 
-      const empresaId = profile.empresa_id;
+      const recentInventarios: DashboardInventory[] = summary.recent_inventories.map((inventory) => ({
+        id: inventory.id,
+        nome: inventory.name,
+        status: mapInventoryStatus(inventory.status),
+        created_at: inventory.created_at,
+      }));
 
-      // Parallel fetches
-      const [
-        { count: ativos },
-        { count: finalizados },
-        { count: totalProdutos },
-        { data: recentInventarios },
-        { data: allProdutos },
-      ] = await Promise.all([
-        supabase
-          .from("inventarios")
-          .select("*", { count: "exact", head: true })
-          .eq("empresa_id", empresaId)
-          .neq("status", "finalizado"),
-        supabase
-          .from("inventarios")
-          .select("*", { count: "exact", head: true })
-          .eq("empresa_id", empresaId)
-          .eq("status", "finalizado"),
-        supabase
-          .from("produtos")
-          .select("*", { count: "exact", head: true })
-          .eq("empresa_id", empresaId)
-          .eq("ativo", true),
-        supabase
-          .from("inventarios")
-          .select("*")
-          .eq("empresa_id", empresaId)
-          .order("created_at", { ascending: false })
-          .limit(5),
-        supabase
-          .from("produtos")
-          .select("categoria")
-          .eq("empresa_id", empresaId)
-          .eq("ativo", true),
-      ]);
+      const progressData: InventarioProgress[] = summary.progress_by_inventory.map((row) => ({
+        nome: row.name,
+        total: row.total,
+        contados: row.counted,
+        pendentes: row.pending,
+        percentual: row.percentage,
+      }));
 
-      // Categoria distribution
-      const catMap = new Map<string, number>();
-      (allProdutos ?? []).forEach((p) => {
-        const cat = p.categoria || "Sem categoria";
-        catMap.set(cat, (catMap.get(cat) ?? 0) + 1);
-      });
-      const categoriaData: CategoriaDist[] = Array.from(catMap.entries())
-        .map(([categoria, quantidade]) => ({ categoria, quantidade }))
-        .sort((a, b) => b.quantidade - a.quantidade)
-        .slice(0, 8);
+      const divergenciaData: DivergenciaByInventario[] = summary.divergence_by_inventory.map((row) => ({
+        nome: row.name,
+        ok: row.ok,
+        divergentes: row.divergent,
+      }));
 
-      let produtosContados = 0;
-      let divergencias = 0;
-      let progressData: InventarioProgress[] = [];
-      let divergenciaData: DivergenciaByInventario[] = [];
-
-      if (recentInventarios?.length) {
-        const invIds = recentInventarios.map((i) => i.id);
-
-        const { data: invItems } = await supabase
-          .from("inventario_produtos")
-          .select("inventario_id, estoque_contado, status")
-          .in("inventario_id", invIds);
-
-        if (invItems) {
-          // Group by inventario
-          const grouped = new Map<string, typeof invItems>();
-          invItems.forEach((item) => {
-            const list = grouped.get(item.inventario_id) ?? [];
-            list.push(item);
-            grouped.set(item.inventario_id, list);
-          });
-
-          // Active stats
-          const activeItems = invItems.filter((item) => {
-            const inv = recentInventarios.find((i) => i.id === item.inventario_id);
-            return inv && inv.status !== "finalizado";
-          });
-          produtosContados = activeItems.filter((i) => i.estoque_contado !== null).length;
-          divergencias = activeItems.filter((i) => i.status === "divergente").length;
-
-          // Build chart data
-          recentInventarios.forEach((inv) => {
-            const items = grouped.get(inv.id) ?? [];
-            if (!items.length) return;
-            const total = items.length;
-            const contados = items.filter((i) => i.estoque_contado !== null).length;
-            const pendentes = total - contados;
-            progressData.push({
-              nome: inv.nome.length > 15 ? inv.nome.slice(0, 15) + "…" : inv.nome,
-              total,
-              contados,
-              pendentes,
-              percentual: Math.round((contados / total) * 100),
-            });
-
-            const ok = items.filter((i) => i.status === "ok").length;
-            const divergentes = items.filter((i) => i.status === "divergente").length;
-            if (ok || divergentes) {
-              divergenciaData.push({
-                nome: inv.nome.length > 15 ? inv.nome.slice(0, 15) + "…" : inv.nome,
-                ok,
-                divergentes,
-              });
-            }
-          });
-        }
-      }
+      const categoriaData: CategoriaDist[] = summary.categories_distribution.map((row) => ({
+        categoria: row.category,
+        quantidade: row.quantity,
+      }));
 
       return {
-        inventariosAtivos: ativos ?? 0,
-        inventariosFinalizados: finalizados ?? 0,
-        totalProdutos: totalProdutos ?? 0,
-        produtosContados,
-        divergencias,
-        recentInventarios: recentInventarios ?? [],
+        inventariosAtivos: summary.active_inventories,
+        inventariosFinalizados: summary.finished_inventories,
+        totalProdutos: summary.total_products,
+        produtosContados: summary.counted_products,
+        divergencias: summary.divergent_items,
+        recentInventarios,
         progressData,
         divergenciaData,
         categoriaData,
       };
     },
-    enabled: !!profile?.empresa_id,
+    enabled: Boolean(tenantId),
   });
 }

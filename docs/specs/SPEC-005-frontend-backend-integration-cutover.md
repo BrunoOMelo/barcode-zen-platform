@@ -6,7 +6,7 @@
 |---|---|
 | ID | SPEC-005 |
 | Prioridade | P0 |
-| Status | Draft |
+| Status | In Progress |
 | Dono tecnico | Frontend Lead |
 | Dono produto | Product Owner |
 | Dependencias | SPEC-003, SPEC-004 |
@@ -74,3 +74,13 @@ Migrar frontend para consumir API backend em todos os fluxos core, mantendo expe
 | T005-05 | Adicionar feature flags para cutover por modulo | Frontend | 0.5d | T005-01 |
 | T005-06 | Executar smoke test dos fluxos criticos | QA | 1d | T005-03 |
 | T005-07 | Remover acessos diretos de dominio ao Supabase no frontend | Frontend | 0.5d | T005-06 |
+
+## Progresso de implementacao (2026-03-31)
+
+- [x] T005-01 - client padrao para backend em `src/platform/api.ts`.
+- [x] T005-02 - `useProdutos` migrado para backend-only.
+- [x] T005-03 - `useInventarios`/`contagens` migrados para backend-only.
+- [x] T005-04 - dashboard agregado backend em `GET /api/v1/dashboard/summary` + `useDashboard` backend-driven.
+- [x] T005-05 - feature flags de cutover (`VITE_PLATFORM_CUTOVER_*`) adicionadas.
+- [x] T005-06 - smoke test E2E executado com Playwright (`tests/e2e/platform-cutover.spec.ts`).
+- [ ] T005-07 - remocao total de acessos diretos legacy ainda pendente em modulos fora do core.

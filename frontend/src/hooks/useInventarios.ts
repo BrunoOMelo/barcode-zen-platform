@@ -1,66 +1,232 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { useProfile } from "@/hooks/useProfile";
-import { useAuth } from "@/hooks/useAuth";
-import type { Tables, TablesInsert } from "@/integrations/supabase/types";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  addInventoryItemsFromSession,
+  changeInventoryStatusFromSession,
+  createInventoryFromSession,
+  getInventoryFromSession,
+  listInventoryCountsFromSession,
+  listInventoryItemsFromSession,
+  listInventoriesFromSession,
+  registerInventoryCountFromSession,
+} from "@/platform/api";
+import { platformFlags } from "@/platform/flags";
+import { loadPlatformSession } from "@/platform/storage";
 import { toast } from "sonner";
 
-export type Inventario = Tables<"inventarios">;
-export type InventarioProduto = Tables<"inventario_produtos"> & {
-  produtos?: Tables<"produtos">;
+type LegacyInventoryStatus = "criado" | "em_contagem" | "em_recontagem" | "em_analise" | "finalizado";
+type BackendInventoryStatus = "created" | "counting" | "recounting" | "review" | "finished";
+
+export interface Inventario {
+  id: string;
+  nome: string;
+  empresa_id: string;
+  status: LegacyInventoryStatus;
+  criado_por: string | null;
+  data_inicio: string | null;
+  data_fim: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InventarioProduto {
+  id: string;
+  inventario_id: string;
+  produto_id: string;
+  estoque_sistema: number;
+  estoque_contado: number | null;
+  divergencia: number | null;
+  status: "pendente" | "ok" | "divergente";
+  created_at: string;
+  updated_at: string;
+  produtos?: {
+    descricao: string;
+    sku: string | null;
+    codigo_barras: string | null;
+  };
+}
+
+export interface Contagem {
+  id: string;
+  inventario_id: string;
+  produto_id: string;
+  usuario_id: string;
+  quantidade: number;
+  tipo: "primeira" | "recontagem";
+  data_contagem: string;
+  created_at: string;
+  produtos?: {
+    descricao: string;
+    sku: string | null;
+    codigo_barras: string | null;
+  };
+}
+
+const BACKEND_TO_LEGACY_STATUS: Record<BackendInventoryStatus, LegacyInventoryStatus> = {
+  created: "criado",
+  counting: "em_contagem",
+  recounting: "em_recontagem",
+  review: "em_analise",
+  finished: "finalizado",
 };
-export type Contagem = Tables<"contagens">;
+
+const LEGACY_TO_BACKEND_STATUS: Record<LegacyInventoryStatus, BackendInventoryStatus> = {
+  criado: "created",
+  em_contagem: "counting",
+  em_recontagem: "recounting",
+  em_analise: "review",
+  finalizado: "finished",
+};
+
+function ensureInventoriesCutoverEnabled(): void {
+  if (!platformFlags.cutoverInventories) {
+    throw new Error("Modulo de inventarios via backend esta desabilitado por feature flag.");
+  }
+}
+
+function requirePlatformSessionTenantId(): string {
+  const session = loadPlatformSession();
+  if (!session?.selectedTenantId) {
+    throw new Error("Sessao da plataforma nao encontrada. Faca login em /platform/login.");
+  }
+  return session.selectedTenantId;
+}
+
+function mapInventoryStatus(status: BackendInventoryStatus): LegacyInventoryStatus {
+  return BACKEND_TO_LEGACY_STATUS[status];
+}
+
+function mapLegacyStatus(status: string): BackendInventoryStatus {
+  return LEGACY_TO_BACKEND_STATUS[status as LegacyInventoryStatus] ?? "created";
+}
+
+function mapInventoryFromApi(item: {
+  id: string;
+  name: string;
+  status: BackendInventoryStatus;
+  tenant_id: string;
+  created_by: string;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+}): Inventario {
+  return {
+    id: item.id,
+    nome: item.name,
+    empresa_id: item.tenant_id,
+    status: mapInventoryStatus(item.status),
+    criado_por: item.created_by,
+    data_inicio: item.started_at,
+    data_fim: item.finished_at,
+    created_at: item.created_at,
+    updated_at: item.updated_at,
+  };
+}
+
+function mapItemStatus(status: "pending" | "counted" | "divergent"): "pendente" | "ok" | "divergente" {
+  if (status === "pending") return "pendente";
+  if (status === "counted") return "ok";
+  return "divergente";
+}
+
+async function listAllInventories(): Promise<Inventario[]> {
+  const first = await listInventoriesFromSession({ page: 1, pageSize: 100 });
+  const items = [...first.items];
+
+  for (let page = 2; page <= first.total_pages; page += 1) {
+    const next = await listInventoriesFromSession({ page, pageSize: 100 });
+    items.push(...next.items);
+  }
+
+  return items.map(mapInventoryFromApi);
+}
+
+async function listAllCounts(inventoryId: string): Promise<Contagem[]> {
+  const first = await listInventoryCountsFromSession(inventoryId, { page: 1, pageSize: 100 });
+  const all = [...first.items];
+
+  for (let page = 2; page <= first.total_pages; page += 1) {
+    const next = await listInventoryCountsFromSession(inventoryId, { page, pageSize: 100 });
+    all.push(...next.items);
+  }
+
+  return all.map((count) => ({
+    id: count.id,
+    inventario_id: count.inventory_id,
+    produto_id: count.product_id,
+    usuario_id: count.counted_by,
+    quantidade: count.quantity,
+    tipo: count.count_type === "first" ? "primeira" : "recontagem",
+    data_contagem: count.created_at,
+    created_at: count.created_at,
+    produtos: {
+      descricao: count.product_name,
+      sku: count.product_sku ?? null,
+      codigo_barras: count.product_barcode ?? null,
+    },
+  }));
+}
 
 export function useInventarios() {
-  const { data: profile } = useProfile();
+  const tenantId = loadPlatformSession()?.selectedTenantId;
 
   return useQuery({
-    queryKey: ["inventarios", profile?.empresa_id],
+    queryKey: ["inventarios", tenantId],
     queryFn: async () => {
-      if (!profile?.empresa_id) return [];
-      const { data, error } = await supabase
-        .from("inventarios")
-        .select("*")
-        .eq("empresa_id", profile.empresa_id)
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data as Inventario[];
+      ensureInventoriesCutoverEnabled();
+      requirePlatformSessionTenantId();
+      return listAllInventories();
     },
-    enabled: !!profile?.empresa_id,
+    enabled: !!tenantId,
   });
 }
 
 export function useInventario(id: string | undefined) {
+  const tenantId = loadPlatformSession()?.selectedTenantId;
+
   return useQuery({
-    queryKey: ["inventario", id],
+    queryKey: ["inventario", tenantId, id],
     queryFn: async () => {
+      ensureInventoriesCutoverEnabled();
+      requirePlatformSessionTenantId();
       if (!id) return null;
-      const { data, error } = await supabase
-        .from("inventarios")
-        .select("*")
-        .eq("id", id)
-        .single();
-      if (error) throw error;
-      return data as Inventario;
+      const inventory = await getInventoryFromSession(id);
+      return mapInventoryFromApi(inventory);
     },
-    enabled: !!id,
+    enabled: !!id && !!tenantId,
   });
 }
 
 export function useInventarioProdutos(inventarioId: string | undefined) {
+  const tenantId = loadPlatformSession()?.selectedTenantId;
+
   return useQuery({
-    queryKey: ["inventario_produtos", inventarioId],
+    queryKey: ["inventario_produtos", tenantId, inventarioId],
     queryFn: async () => {
+      ensureInventoriesCutoverEnabled();
+      requirePlatformSessionTenantId();
       if (!inventarioId) return [];
-      const { data, error } = await supabase
-        .from("inventario_produtos")
-        .select("*, produtos(*)")
-        .eq("inventario_id", inventarioId)
-        .order("created_at", { ascending: true });
-      if (error) throw error;
-      return data as InventarioProduto[];
+      const response = await listInventoryItemsFromSession(inventarioId);
+      return response.items.map(
+        (item): InventarioProduto => ({
+          id: item.id,
+          inventario_id: item.inventory_id,
+          produto_id: item.product_id,
+          estoque_sistema: item.system_quantity,
+          estoque_contado: item.counted_quantity,
+          divergencia: item.difference,
+          status: mapItemStatus(item.status),
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+          produtos: {
+            descricao: item.product_name,
+            sku: item.product_sku ?? null,
+            codigo_barras: item.product_barcode ?? null,
+          },
+        }),
+      );
     },
-    enabled: !!inventarioId,
+    enabled: !!inventarioId && !!tenantId,
   });
 }
 
@@ -77,8 +243,6 @@ export function useInventarioStats(inventarioId: string | undefined) {
 
 export function useCreateInventario() {
   const queryClient = useQueryClient();
-  const { data: profile } = useProfile();
-  const { user } = useAuth();
 
   return useMutation({
     mutationFn: async ({
@@ -92,45 +256,26 @@ export function useCreateInventario() {
       estoques: Record<string, number>;
       quantidades?: Record<string, number | null>;
     }) => {
-      if (!profile?.empresa_id || !user) throw new Error("Empresa não configurada");
+      ensureInventoriesCutoverEnabled();
+      requirePlatformSessionTenantId();
+      const created = await createInventoryFromSession(nome);
+      await addInventoryItemsFromSession(created.id, produtoIds);
 
-      const { data: inventario, error: invError } = await supabase
-        .from("inventarios")
-        .insert({
-          nome,
-          empresa_id: profile.empresa_id,
-          criado_por: user.id,
-        })
-        .select()
-        .single();
-      if (invError) throw invError;
+      const hasCustomInitialValues =
+        Object.keys(estoques).length > 0 || Object.values(quantidades ?? {}).some((value) => value !== null && value !== undefined);
+      if (hasCustomInitialValues) {
+        toast.warning("Saldo inicial e quantidade predefinida ainda nao sao aplicados automaticamente na API.");
+      }
 
-      const invProdutos = produtoIds.map((produtoId) => {
-        const qty = quantidades?.[produtoId];
-        const saldo = estoques[produtoId] ?? 0;
-        return {
-          inventario_id: inventario.id,
-          produto_id: produtoId,
-          estoque_sistema: saldo,
-          estoque_contado: qty ?? null,
-          divergencia: qty != null ? qty - saldo : null,
-          status: qty != null ? (qty === saldo ? "ok" : "divergente") : "pendente",
-        };
-      });
-
-      const { error: ipError } = await supabase
-        .from("inventario_produtos")
-        .insert(invProdutos);
-      if (ipError) throw ipError;
-
-      return inventario;
+      return mapInventoryFromApi(created);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["inventarios"] });
-      toast.success("Inventário criado com sucesso!");
+      toast.success("Inventario criado com sucesso!");
     },
-    onError: (error) => {
-      toast.error(`Erro ao criar inventário: ${error.message}`);
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : "Falha inesperada ao criar inventario.";
+      toast.error(`Erro ao criar inventario: ${message}`);
     },
   });
 }
@@ -146,26 +291,22 @@ export function useUpdateInventarioStatus() {
       id: string;
       status: string;
     }) => {
-      const updates: Record<string, unknown> = { status };
-      if (status === "em_contagem") updates.data_inicio = new Date().toISOString();
-      if (status === "finalizado") updates.data_fim = new Date().toISOString();
-
-      const { error } = await supabase
-        .from("inventarios")
-        .update(updates)
-        .eq("id", id);
-      if (error) throw error;
+      ensureInventoriesCutoverEnabled();
+      requirePlatformSessionTenantId();
+      const backendStatus = mapLegacyStatus(status);
+      await changeInventoryStatusFromSession(id, backendStatus);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["inventarios"] });
       queryClient.invalidateQueries({ queryKey: ["inventario"] });
+      queryClient.invalidateQueries({ queryKey: ["inventario_produtos"] });
+      queryClient.invalidateQueries({ queryKey: ["contagens"] });
     },
   });
 }
 
 export function useRegistrarContagem() {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
 
   return useMutation({
     mutationFn: async ({
@@ -179,43 +320,33 @@ export function useRegistrarContagem() {
       quantidade: number;
       tipo?: "primeira" | "recontagem";
     }) => {
-      if (!user) throw new Error("Usuário não autenticado");
-
-      const { data, error } = await supabase
-        .from("contagens")
-        .insert({
-          inventario_id: inventarioId,
-          produto_id: produtoId,
-          usuario_id: user.id,
-          quantidade,
-          tipo,
-        })
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: ["inventario_produtos", variables.inventarioId],
+      ensureInventoriesCutoverEnabled();
+      requirePlatformSessionTenantId();
+      const countType = tipo === "recontagem" ? "recount" : "first";
+      return registerInventoryCountFromSession(inventarioId, {
+        productId: produtoId,
+        quantity: quantidade,
+        countType,
       });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["inventario_produtos"] });
+      queryClient.invalidateQueries({ queryKey: ["contagens"] });
     },
   });
 }
 
 export function useContagens(inventarioId: string | undefined) {
+  const tenantId = loadPlatformSession()?.selectedTenantId;
+
   return useQuery({
-    queryKey: ["contagens", inventarioId],
+    queryKey: ["contagens", tenantId, inventarioId],
     queryFn: async () => {
+      ensureInventoriesCutoverEnabled();
+      requirePlatformSessionTenantId();
       if (!inventarioId) return [];
-      const { data, error } = await supabase
-        .from("contagens")
-        .select("*, produtos(descricao, sku, codigo_barras)")
-        .eq("inventario_id", inventarioId)
-        .order("data_contagem", { ascending: false });
-      if (error) throw error;
-      return data;
+      return listAllCounts(inventarioId);
     },
-    enabled: !!inventarioId,
+    enabled: !!inventarioId && !!tenantId,
   });
 }

@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from fastapi import HTTPException, Request, status
+from fastapi import Request
+
+from app.exceptions.auth_exceptions import AuthenticationRequiredException
 
 
 @dataclass(slots=True)
@@ -14,8 +16,5 @@ class AuthenticatedUser:
 def get_current_user(request: Request) -> AuthenticatedUser:
     user = getattr(request.state, "current_user", None)
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token de autenticacao ausente ou invalido.",
-        )
+        raise AuthenticationRequiredException()
     return user

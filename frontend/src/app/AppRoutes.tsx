@@ -5,37 +5,26 @@ import Auditoria from "@/pages/Auditoria";
 import Contagem from "@/pages/Contagem";
 import CriarInventario from "@/pages/CriarInventario";
 import Divergencias from "@/pages/Divergencias";
-import EmpresaConfig from "@/pages/EmpresaConfig";
 import Estoque from "@/pages/Estoque";
-import Index from "@/pages/Index";
-import Login from "@/pages/Login";
 import NotFound from "@/pages/NotFound";
-import Onboarding from "@/pages/Onboarding";
+import PlatformLogin from "@/pages/platform/PlatformLogin";
 import Recontagem from "@/pages/Recontagem";
 import Relatorios from "@/pages/Relatorios";
-import ResetPassword from "@/pages/ResetPassword";
+import { loadPlatformSession } from "@/platform/storage";
 
 export function AppRoutes() {
+  const hasSession = Boolean(loadPlatformSession());
+  const rootTarget = hasSession ? "/estoque" : "/login";
+
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
-      <Route
-        path="/onboarding"
-        element={
-          <ProtectedRoute>
-            <Onboarding />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <Index />
-          </ProtectedRoute>
-        }
-      />
+      <Route path="/" element={<Navigate to={rootTarget} replace />} />
+      <Route path="/login" element={<PlatformLogin />} />
+
+      <Route path="/platform/login" element={<Navigate to="/login" replace />} />
+      <Route path="/platform/app" element={<Navigate to="/estoque" replace />} />
+      <Route path="/platform" element={<Navigate to="/login" replace />} />
+
       <Route
         path="/estoque"
         element={
@@ -87,22 +76,20 @@ export function AppRoutes() {
         }
       />
       <Route
-        path="/relatorios"
+        path="/dashboard"
         element={
           <ProtectedRoute>
             <Relatorios />
           </ProtectedRoute>
         }
       />
-      <Route path="/usuarios" element={<Navigate to="/configuracoes" replace />} />
-      <Route
-        path="/configuracoes/*"
-        element={
-          <ProtectedRoute>
-            <EmpresaConfig />
-          </ProtectedRoute>
-        }
-      />
+      <Route path="/relatorios" element={<Navigate to="/dashboard" replace />} />
+
+      <Route path="/reset-password" element={<Navigate to="/login" replace />} />
+      <Route path="/onboarding" element={<Navigate to="/login" replace />} />
+      <Route path="/usuarios" element={<Navigate to="/estoque" replace />} />
+      <Route path="/configuracoes/*" element={<Navigate to="/estoque" replace />} />
+
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

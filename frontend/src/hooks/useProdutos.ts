@@ -1,12 +1,44 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { useProfile } from "@/hooks/useProfile";
-import type { Tables, TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  createProductFromSession,
+  deleteProductFromSession,
+  listProductsFromSession,
+  updateProductFromSession,
+} from "@/platform/api";
+import { platformFlags } from "@/platform/flags";
+import { loadPlatformSession } from "@/platform/storage";
 import { toast } from "sonner";
 
-export type Produto = Tables<"produtos">;
-export type ProdutoInsert = TablesInsert<"produtos">;
-export type ProdutoUpdate = TablesUpdate<"produtos">;
+export interface Produto {
+  id: string;
+  descricao: string;
+  sku: string | null;
+  codigo_barras: string | null;
+  categoria: string | null;
+  marca: string | null;
+  data_validade: string | null;
+  lote: string | null;
+  custo: number | null;
+  ativo: boolean;
+  quantidade: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProdutoInsert {
+  descricao: string;
+  sku?: string | null;
+  codigo_barras?: string | null;
+  categoria?: string | null;
+  marca?: string | null;
+  data_validade?: string | null;
+  lote?: string | null;
+  custo?: number | null;
+  ativo?: boolean;
+  quantidade?: number;
+}
+
+export type ProdutoUpdate = Partial<ProdutoInsert>;
 
 interface UseProdutosOptions {
   search?: string;
@@ -15,60 +47,99 @@ interface UseProdutosOptions {
   ativo?: boolean;
 }
 
+function ensureProductsCutoverEnabled(): void {
+  if (!platformFlags.cutoverProducts) {
+    throw new Error("Modulo de produtos via backend esta desabilitado por feature flag.");
+  }
+}
+
+function requirePlatformSessionTenantId(): string {
+  const session = loadPlatformSession();
+  if (!session?.selectedTenantId) {
+    throw new Error("Sessao da plataforma nao encontrada. Faca login em /platform/login.");
+  }
+  return session.selectedTenantId;
+}
+
+function mapProductToLegacy(item: {
+  id: string;
+  name: string;
+  sku: string;
+  barcode: string;
+  category: string | null;
+  active: boolean;
+  cost: number | null;
+  quantity: number;
+  created_at: string;
+  updated_at: string;
+}): Produto {
+  return {
+    id: item.id,
+    descricao: item.name,
+    sku: item.sku ?? null,
+    codigo_barras: item.barcode ?? null,
+    categoria: item.category ?? null,
+    marca: null,
+    data_validade: null,
+    lote: null,
+    custo: item.cost,
+    ativo: item.active,
+    quantidade: item.quantity,
+    created_at: item.created_at,
+    updated_at: item.updated_at,
+  };
+}
+
 export function useProdutos({ search = "", page = 0, pageSize = 50, ativo }: UseProdutosOptions = {}) {
-  const { data: profile } = useProfile();
+  const tenantId = loadPlatformSession()?.selectedTenantId;
 
   return useQuery({
-    queryKey: ["produtos", profile?.empresa_id, search, page, pageSize, ativo],
+    queryKey: ["produtos", tenantId, search, page, pageSize, ativo],
     queryFn: async () => {
-      if (!profile?.empresa_id) return { data: [], count: 0 };
-
-      let query = supabase
-        .from("produtos")
-        .select("*", { count: "exact" })
-        .eq("empresa_id", profile.empresa_id)
-        .order("descricao", { ascending: true })
-        .range(page * pageSize, (page + 1) * pageSize - 1);
-
-      if (ativo !== undefined) {
-        query = query.eq("ativo", ativo);
-      }
-
-      if (search.trim()) {
-        query = query.or(
-          `descricao.ilike.%${search}%,sku.ilike.%${search}%,codigo_barras.ilike.%${search}%`
-        );
-      }
-
-      const { data, error, count } = await query;
-      if (error) throw error;
-      return { data: data as Produto[], count: count ?? 0 };
+      ensureProductsCutoverEnabled();
+      const response = await listProductsFromSession({
+        page: page + 1,
+        pageSize,
+        search: search.trim() || undefined,
+        active: ativo,
+      });
+      return {
+        data: response.items.map(mapProductToLegacy),
+        count: response.total,
+      };
     },
-    enabled: !!profile?.empresa_id,
+    enabled: !!tenantId,
   });
 }
 
 export function useCreateProduto() {
   const queryClient = useQueryClient();
-  const { data: profile } = useProfile();
 
   return useMutation({
-    mutationFn: async (produto: Omit<ProdutoInsert, "empresa_id">) => {
-      if (!profile?.empresa_id) throw new Error("Empresa não configurada");
-      const { data, error } = await supabase
-        .from("produtos")
-        .insert({ ...produto, empresa_id: profile.empresa_id })
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+    mutationFn: async (produto: ProdutoInsert) => {
+      ensureProductsCutoverEnabled();
+      requirePlatformSessionTenantId();
+      const barcodeCandidate = produto.codigo_barras?.trim() || produto.sku?.trim();
+      if (!barcodeCandidate) {
+        throw new Error("Informe SKU ou codigo de barras para criar o produto.");
+      }
+      return createProductFromSession({
+        name: produto.descricao.trim(),
+        sku: produto.sku?.trim() || barcodeCandidate,
+        barcode: barcodeCandidate,
+        category: produto.categoria?.trim() || undefined,
+        active: produto.ativo ?? true,
+        cost: produto.custo ?? undefined,
+        quantity: produto.quantidade ?? 0,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["produtos"] });
       toast.success("Produto criado com sucesso");
     },
-    onError: (error) => {
-      toast.error(`Erro ao criar produto: ${error.message}`);
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : "Falha inesperada ao criar produto.";
+      toast.error(`Erro ao criar produto: ${message}`);
     },
   });
 }
@@ -78,21 +149,27 @@ export function useUpdateProduto() {
 
   return useMutation({
     mutationFn: async ({ id, ...updates }: ProdutoUpdate & { id: string }) => {
-      const { data, error } = await supabase
-        .from("produtos")
-        .update(updates)
-        .eq("id", id)
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+      ensureProductsCutoverEnabled();
+      requirePlatformSessionTenantId();
+      const payload: Record<string, unknown> = {};
+
+      if (updates.descricao !== undefined) payload.name = updates.descricao?.trim();
+      if (updates.sku !== undefined) payload.sku = updates.sku?.trim() || undefined;
+      if (updates.codigo_barras !== undefined) payload.barcode = updates.codigo_barras?.trim() || undefined;
+      if (updates.categoria !== undefined) payload.category = updates.categoria?.trim() || undefined;
+      if (updates.ativo !== undefined) payload.active = updates.ativo;
+      if (updates.custo !== undefined) payload.cost = updates.custo ?? undefined;
+      if (updates.quantidade !== undefined) payload.quantity = updates.quantidade;
+
+      return updateProductFromSession(id, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["produtos"] });
       toast.success("Produto atualizado");
     },
-    onError: (error) => {
-      toast.error(`Erro ao atualizar: ${error.message}`);
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : "Falha inesperada ao atualizar produto.";
+      toast.error(`Erro ao atualizar: ${message}`);
     },
   });
 }
@@ -102,15 +179,17 @@ export function useDeleteProduto() {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("produtos").delete().eq("id", id);
-      if (error) throw error;
+      ensureProductsCutoverEnabled();
+      requirePlatformSessionTenantId();
+      await deleteProductFromSession(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["produtos"] });
-      toast.success("Produto excluído");
+      toast.success("Produto excluido");
     },
-    onError: (error) => {
-      toast.error(`Erro ao excluir: ${error.message}`);
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : "Falha inesperada ao excluir produto.";
+      toast.error(`Erro ao excluir: ${message}`);
     },
   });
 }
