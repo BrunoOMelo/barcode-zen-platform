@@ -33,6 +33,14 @@ Quadro operacional para execucao das tarefas das specs.
 | T005-05 | SPEC-005 | Frontend | Feature flag de cutover ativa |
 | T005-06..T005-07 | SPEC-005 | QA/Frontend | Fluxos core sem acesso direto a banco |
 
+## Semana 6-7 (Partner Pilot Sprint)
+
+| Task | Spec | Dono sugerido | Resultado esperado |
+|---|---|---|---|
+| T010-01..T010-03 | SPEC-010 | Platform | Frontend no Netlify com backend local via tunel HTTPS |
+| T010-04..T010-05 | SPEC-010 | Backend + Platform | CORS e runbook de operacao do piloto definidos |
+| T010-06..T010-08 | SPEC-010 | QA + Produto + Arquitetura | Validacao com socio e decisao de proximo ambiente |
+
 ## Semana 7-8 (Reliability Sprint)
 
 | Task | Spec | Dono sugerido | Resultado esperado |

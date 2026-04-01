@@ -85,6 +85,11 @@ npm run mcp:playwright
 
 UI cutover validation report: `docs/frontend-cutover-validation.md`
 
+Pilot environment (Netlify frontend + local backend tunnel):
+
+- ADR: `docs/adr/ADR-003-partner-pilot-netlify-local-backend.md`
+- Runbook: `docs/runbooks/partner-pilot-netlify.md`
+
 ## Optional: run backend + postgres with Docker Compose
 
 ```bash
@@ -98,9 +103,6 @@ docker compose up --build
 
 ### Frontend (`frontend/.env`)
 
-- `VITE_SUPABASE_PROJECT_ID`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
-- `VITE_SUPABASE_URL`
 - `VITE_PLATFORM_API_BASE_URL`
 - `VITE_PLATFORM_CUTOVER_PRODUCTS`
 - `VITE_PLATFORM_CUTOVER_INVENTORIES`

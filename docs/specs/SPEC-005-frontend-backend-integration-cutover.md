@@ -6,7 +6,7 @@
 |---|---|
 | ID | SPEC-005 |
 | Prioridade | P0 |
-| Status | In Progress |
+| Status | Implemented (Closed 2026-03-31) |
 | Dono tecnico | Frontend Lead |
 | Dono produto | Product Owner |
 | Dependencias | SPEC-003, SPEC-004 |
@@ -83,4 +83,4 @@ Migrar frontend para consumir API backend em todos os fluxos core, mantendo expe
 - [x] T005-04 - dashboard agregado backend em `GET /api/v1/dashboard/summary` + `useDashboard` backend-driven.
 - [x] T005-05 - feature flags de cutover (`VITE_PLATFORM_CUTOVER_*`) adicionadas.
 - [x] T005-06 - smoke test E2E executado com Playwright (`tests/e2e/platform-cutover.spec.ts`).
-- [ ] T005-07 - remocao total de acessos diretos legacy ainda pendente em modulos fora do core.
+- [x] T005-07 - acessos diretos legacy ao Supabase removidos do frontend (`hooks/pages/componentes/integrations` legados removidos) e bootstrap 100% backend-driven.

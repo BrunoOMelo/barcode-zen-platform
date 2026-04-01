@@ -33,6 +33,8 @@ npm run e2e -- --reporter=line --workers=1
 - Frontend typecheck: `OK`
 - Frontend build: `OK`
 - Backend dashboard integration tests: `2 passed` (`backend/tests/test_dashboard_summary_api.py`)
+- Frontend bootstrap sem dependencia ativa de Supabase (`src/app/App.tsx` sem `AuthProvider` legado)
+- Supabase removido dos modulos de frontend do produto atual (sem imports/residuos em `src`)
 
 ## E2E test file
 
@@ -45,7 +47,4 @@ npm run e2e -- --reporter=line --workers=1
 
 ## Remaining legacy Supabase usage (outside core inventory/product/dashboard)
 
-- Auth and account recovery: `useAuth.tsx`, `pages/Login.tsx`, `pages/ResetPassword.tsx`
-- Onboarding/profile/company settings: `pages/Onboarding.tsx`, `hooks/useProfile.ts`, `hooks/useEmpresas.ts`
-- Access and users management: `hooks/useUsuarios.ts`, `hooks/usePerfisAcesso.ts`, `components/configuracoes/UsuariosTab.tsx`
-- Media storage/profile avatar: `components/AvatarUpload.tsx`
+- Nenhum no frontend atual (`rg -n supabase frontend/src` sem resultados).

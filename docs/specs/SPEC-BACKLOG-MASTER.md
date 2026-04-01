@@ -30,6 +30,7 @@ Backlog profissional para execucao das specs SaaS com foco em colocar o produto 
 | Observabilidade e trilha de auditoria | SPEC-006 | SPEC-002 | M2-M3 |
 | CI/CD, quality gates e release governance | SPEC-007 | SPEC-003, SPEC-004 | M2-M3 |
 | Relatorios performaticos com jobs async | SPEC-008 | SPEC-004, SPEC-006 | M3 |
+| Ambiente de piloto para validacao com socio (Netlify + tunel local) | SPEC-010 | SPEC-005 | M2 |
 
 ## P2 - Obrigatorio para escalar monetizacao
 
@@ -43,10 +44,11 @@ Backlog profissional para execucao das specs SaaS com foco em colocar o produto 
 2. Migracao de produtos.
 3. Migracao de inventarios e contagens.
 4. Cutover do frontend.
-5. Observabilidade e auditoria.
-6. CI/CD e governanca de release.
-7. Performance de relatorios.
-8. Billing e limites.
+5. Camada de piloto externo para validacao de negocio.
+6. Observabilidade e auditoria.
+7. CI/CD e governanca de release.
+8. Performance de relatorios.
+9. Billing e limites.
 
 ## Definicao de pronto por milestone
 

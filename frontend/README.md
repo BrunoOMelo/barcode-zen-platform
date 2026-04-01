@@ -8,7 +8,6 @@ React + Vite + TypeScript application extracted from the MVP and organized for i
 - `src/components`: reusable UI and feature components
 - `src/hooks`: data and state hooks
 - `src/platform`: backend platform client/session/types
-- `src/integrations`: legacy integrations (non-core modules)
 - `src/lib`: shared utility helpers
 - `src/pages`: route pages
 
@@ -72,9 +71,6 @@ npm run build
 
 Copy `.env.example` to `.env` and fill values:
 
-- `VITE_SUPABASE_PROJECT_ID`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
-- `VITE_SUPABASE_URL`
 - `VITE_PLATFORM_API_BASE_URL`
 - `VITE_PLATFORM_CUTOVER_PRODUCTS`
 - `VITE_PLATFORM_CUTOVER_INVENTORIES`
