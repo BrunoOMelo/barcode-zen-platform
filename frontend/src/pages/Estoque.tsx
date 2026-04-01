@@ -356,7 +356,7 @@ export default function Estoque() {
             ) : (
               <div className="space-y-3">
                 {inventories.map((inventory) => (
-                  <Card key={inventory.id} className="overflow-hidden">
+                  <Card key={inventory.id} className="overflow-hidden" data-testid={`inventory-card-${inventory.id}`}>
                     <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
@@ -372,6 +372,7 @@ export default function Estoque() {
                       <div className="flex gap-2">
                         {inventory.status === "criado" ? (
                           <Button
+                            data-testid={`inventory-start-count-${inventory.id}`}
                             size="sm"
                             onClick={() => handleStartCount(inventory.id)}
                             disabled={updateInventoryStatus.isPending}
@@ -381,7 +382,11 @@ export default function Estoque() {
                           </Button>
                         ) : null}
                         {inventory.status === "em_contagem" || inventory.status === "em_recontagem" ? (
-                          <Button size="sm" onClick={() => navigate(`/inventarios/${inventory.id}/contagem`)}>
+                          <Button
+                            data-testid={`inventory-continue-count-${inventory.id}`}
+                            size="sm"
+                            onClick={() => navigate(`/inventarios/${inventory.id}/contagem`)}
+                          >
                             <Play className="mr-1 h-4 w-4" />
                             Continuar
                           </Button>

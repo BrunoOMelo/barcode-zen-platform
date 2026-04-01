@@ -259,13 +259,25 @@ export function useCreateInventario() {
       ensureInventoriesCutoverEnabled();
       requirePlatformSessionTenantId();
       const created = await createInventoryFromSession(nome);
-      await addInventoryItemsFromSession(created.id, produtoIds);
+      await addInventoryItemsFromSession(created.id, {
+        items: produtoIds.map((productId) => {
+          const rawSystemQuantity = estoques[productId];
+          const rawCountedQuantity = quantidades?.[productId];
+          const systemQuantity = Number.isFinite(rawSystemQuantity)
+            ? Math.max(0, Number(rawSystemQuantity))
+            : undefined;
+          const countedQuantity =
+            rawCountedQuantity === null || rawCountedQuantity === undefined
+              ? null
+              : Math.max(0, Number(rawCountedQuantity));
 
-      const hasCustomInitialValues =
-        Object.keys(estoques).length > 0 || Object.values(quantidades ?? {}).some((value) => value !== null && value !== undefined);
-      if (hasCustomInitialValues) {
-        toast.warning("Saldo inicial e quantidade predefinida ainda nao sao aplicados automaticamente na API.");
-      }
+          return {
+            product_id: productId,
+            system_quantity: systemQuantity,
+            counted_quantity: countedQuantity,
+          };
+        }),
+      });
 
       return mapInventoryFromApi(created);
     },

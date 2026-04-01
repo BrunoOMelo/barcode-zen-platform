@@ -239,12 +239,14 @@ def add_inventory_items(
     payload: InventoryItemsUpsertRequest,
     _: None = Depends(require_permission(Permission.INVENTORIES_WRITE)),
     tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    current_user: AuthenticatedUser = Depends(get_current_user),
     service: InventoryService = Depends(get_inventory_service),
 ) -> InventoryItemsResponse:
     rows = service.add_items(
         tenant_id=tenant_id,
         inventory_id=inventory_id,
-        product_ids=payload.product_ids,
+        payload=payload,
+        actor_user_id=current_user.user_id,
     )
     items = [
         InventoryItemResponse(

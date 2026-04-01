@@ -11,19 +11,74 @@ import {
   type InventarioProduto,
   useInventario,
   useInventarioProdutos,
-  useInventarioStats,
   useRegistrarContagem,
   useUpdateInventarioStatus,
 } from "@/hooks/useInventarios";
 import { AlertTriangle, ArrowLeft, Check, ScanBarcode } from "lucide-react";
 import { toast } from "sonner";
 
+function normalizeText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function normalizeIdentifier(value: string): string {
+  return normalizeText(value).replace(/[^a-z0-9]/g, "");
+}
+
+function normalizeDigits(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+function findInventoryItemByCode(items: InventarioProduto[], rawCode: string): InventarioProduto | null {
+  const queryText = normalizeText(rawCode);
+  const queryIdentifier = normalizeIdentifier(rawCode);
+  const queryDigits = normalizeDigits(rawCode);
+
+  if (!queryText || !queryIdentifier) {
+    return null;
+  }
+
+  const exactMatch = items.find((inventoryItem) => {
+    const sku = inventoryItem.produtos?.sku ?? "";
+    const barcode = inventoryItem.produtos?.codigo_barras ?? "";
+    const normalizedSku = normalizeIdentifier(sku);
+    const normalizedBarcode = normalizeIdentifier(barcode);
+    const barcodeDigits = normalizeDigits(barcode);
+
+    const bySku = normalizedSku.length > 0 && normalizedSku === queryIdentifier;
+    const byBarcodeIdentifier = normalizedBarcode.length > 0 && normalizedBarcode === queryIdentifier;
+    const byBarcodeDigits = barcodeDigits.length > 0 && queryDigits.length > 0 && barcodeDigits === queryDigits;
+    return bySku || byBarcodeIdentifier || byBarcodeDigits;
+  });
+
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  return (
+    items.find((inventoryItem) => {
+      const sku = normalizeIdentifier(inventoryItem.produtos?.sku ?? "");
+      const barcode = normalizeIdentifier(inventoryItem.produtos?.codigo_barras ?? "");
+      const description = normalizeText(inventoryItem.produtos?.descricao ?? "");
+
+      return (
+        (sku.length > 0 && sku.includes(queryIdentifier)) ||
+        (barcode.length > 0 && barcode.includes(queryIdentifier)) ||
+        (description.length > 0 && description.includes(queryText))
+      );
+    }) ?? null
+  );
+}
+
 export default function Contagem() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: inventario } = useInventario(id);
-  const { data: items } = useInventarioProdutos(id);
-  const stats = useInventarioStats(id);
+  const { data: items, isLoading: loadingItems } = useInventarioProdutos(id);
   const registrarContagem = useRegistrarContagem();
   const updateStatus = useUpdateInventarioStatus();
 
@@ -46,17 +101,12 @@ export default function Contagem() {
 
   const buscarProduto = useCallback(
     (code: string) => {
-      if (!code.trim() || !items) return;
+      if (!code.trim()) return;
+      if (!items) return;
 
       setError("");
       setFoundItem(null);
-
-      const normalizedCode = code.trim().toLowerCase();
-      const item = items.find((inventoryItem) => {
-        const sku = inventoryItem.produtos?.sku?.trim().toLowerCase();
-        const barcodeValue = inventoryItem.produtos?.codigo_barras?.trim().toLowerCase();
-        return sku === normalizedCode || barcodeValue === normalizedCode;
-      });
+      const item = findInventoryItemByCode(items, code);
 
       if (!item) {
         setError("Produto nao encontrado");
@@ -72,9 +122,10 @@ export default function Contagem() {
   );
 
   const handleBarcodeKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === "Enter") {
+    if (event.key === "Enter" || event.key === "Tab") {
       event.preventDefault();
-      buscarProduto(barcode);
+      if (loadingItems || !items) return;
+      buscarProduto(barcodeRef.current?.value ?? barcode);
     }
   };
 
@@ -128,6 +179,12 @@ export default function Contagem() {
     navigate(`/inventarios/${id}/divergencias`);
   };
 
+  const total = items?.length ?? 0;
+  const contados = items?.filter((item) => item.estoque_contado !== null).length ?? 0;
+  const divergentes = items?.filter((item) => item.status === "divergente").length ?? 0;
+  const pendentes = total - contados;
+  const stats = { total, contados, divergentes, pendentes };
+
   const progress = stats.total > 0 ? (stats.contados / stats.total) * 100 : 0;
 
   return (
@@ -150,6 +207,7 @@ export default function Contagem() {
               <div className="relative">
                 <ScanBarcode className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
                 <Input
+                  id="barcode-input"
                   ref={barcodeRef}
                   placeholder="Leia ou digite o codigo..."
                   className="scanner-input h-14 pl-11 text-lg"
@@ -158,6 +216,17 @@ export default function Contagem() {
                   onKeyDown={handleBarcodeKeyDown}
                   autoComplete="off"
                 />
+              </div>
+              <div className="mt-2 flex justify-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => buscarProduto(barcodeRef.current?.value ?? barcode)}
+                  disabled={!barcode.trim() || loadingItems || !items}
+                >
+                  {loadingItems ? "Carregando itens..." : "Buscar produto"}
+                </Button>
               </div>
               {error && (
                 <p className="mt-2 flex items-center gap-1 text-sm text-destructive">
@@ -185,6 +254,7 @@ export default function Contagem() {
                 <div>
                   <label className="mb-2 block text-sm font-medium text-muted-foreground">Quantidade Contada</label>
                   <Input
+                    id="count-quantity"
                     ref={quantidadeRef}
                     type="number"
                     placeholder="0"
@@ -197,6 +267,7 @@ export default function Contagem() {
                 </div>
 
                 <Button
+                  data-testid="count-confirm"
                   className="touch-target h-14 w-full text-lg font-semibold"
                   onClick={handleConfirmar}
                   disabled={registrarContagem.isPending || quantidade === ""}

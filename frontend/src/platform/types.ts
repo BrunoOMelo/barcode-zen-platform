@@ -144,6 +144,17 @@ export interface InventoryApiItemsResponse {
   total: number;
 }
 
+export interface InventoryApiItemUpsertPayload {
+  product_id: string;
+  system_quantity?: number;
+  counted_quantity?: number | null;
+}
+
+export interface InventoryApiItemsUpsertRequest {
+  product_ids?: string[];
+  items?: InventoryApiItemUpsertPayload[];
+}
+
 export interface InventoryApiCountRow {
   id: string;
   inventory_id: string;

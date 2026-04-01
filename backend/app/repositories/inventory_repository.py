@@ -117,13 +117,25 @@ class InventoryRepository:
         tenant_id: uuid.UUID,
         inventory_id: uuid.UUID,
         product: Product,
+        system_quantity: int | None = None,
+        counted_quantity: int | None = None,
+        counted_by: uuid.UUID | None = None,
+        counted_at: datetime | None = None,
     ) -> InventoryItem:
+        resolved_system_quantity = product.quantity if system_quantity is None else system_quantity
+        difference = None if counted_quantity is None else counted_quantity - resolved_system_quantity
+        status = "pending" if counted_quantity is None else ("counted" if difference == 0 else "divergent")
+
         item = InventoryItem(
             tenant_id=tenant_id,
             inventory_id=inventory_id,
             product_id=product.id,
-            system_quantity=product.quantity,
-            status="pending",
+            system_quantity=resolved_system_quantity,
+            counted_quantity=counted_quantity,
+            difference=difference,
+            status=status,
+            counted_by=counted_by,
+            counted_at=counted_at,
         )
         self.db.add(item)
         self.db.flush()

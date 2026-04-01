@@ -246,6 +246,67 @@ def test_inventory_full_flow_create_items_count_recount_and_finish() -> None:
         )
 
 
+def test_inventory_add_items_supports_system_and_counted_quantities() -> None:
+    user_id = uuid.uuid4()
+    tenant_id = uuid.uuid4()
+    membership_id = uuid.uuid4()
+    product_id = uuid.uuid4()
+
+    _insert_tenant(tenant_id, "IT Inventory Item Quantities")
+    _insert_membership(membership_id, user_id, tenant_id, role="admin")
+    _insert_product(
+        product_id,
+        tenant_id,
+        name="Produto Quantidades",
+        sku=f"SKU-{uuid.uuid4().hex[:10]}",
+        barcode=f"BC-{uuid.uuid4().hex[:10]}",
+        quantity=5,
+    )
+    token = _token_for_user(user_id)
+    headers = _headers(token, tenant_id)
+
+    try:
+        create_inventory = client.post(
+            "/api/v1/inventories/",
+            headers=headers,
+            json={"name": "Inventario com Quantidades"},
+        )
+        assert create_inventory.status_code == 201
+        inventory_id = create_inventory.json()["id"]
+
+        add_items = client.post(
+            f"/api/v1/inventories/{inventory_id}/items",
+            headers=headers,
+            json={
+                "items": [
+                    {
+                        "product_id": str(product_id),
+                        "system_quantity": 20,
+                        "counted_quantity": 18,
+                    }
+                ]
+            },
+        )
+        assert add_items.status_code == 200
+        body = add_items.json()
+        assert body["total"] == 1
+        assert body["items"][0]["system_quantity"] == 20
+        assert body["items"][0]["counted_quantity"] == 18
+        assert body["items"][0]["difference"] == -2
+        assert body["items"][0]["status"] == "divergent"
+
+        list_items = client.get(f"/api/v1/inventories/{inventory_id}/items", headers=headers)
+        assert list_items.status_code == 200
+        assert list_items.json()["items"][0]["system_quantity"] == 20
+        assert list_items.json()["items"][0]["counted_quantity"] == 18
+    finally:
+        _cleanup(
+            tenant_ids=[tenant_id],
+            membership_ids=[membership_id],
+            product_ids=[product_id],
+        )
+
+
 def test_inventory_enforces_transitions_and_role_permissions() -> None:
     admin_user_id = uuid.uuid4()
     member_user_id = uuid.uuid4()

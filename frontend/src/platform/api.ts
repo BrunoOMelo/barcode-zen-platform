@@ -6,6 +6,7 @@ import type {
   InventoryApiCountListResponse,
   InventoryApiCountRow,
   InventoryApiItem,
+  InventoryApiItemsUpsertRequest,
   InventoryApiItemsResponse,
   InventoryApiListResponse,
   LoginResponse,
@@ -267,8 +268,24 @@ export async function listInventoryItemsFromSession(inventoryId: string): Promis
   );
 }
 
-export async function addInventoryItemsFromSession(inventoryId: string, productIds: string[]): Promise<InventoryApiItemsResponse> {
+export async function addInventoryItemsFromSession(
+  inventoryId: string,
+  payload: InventoryApiItemsUpsertRequest,
+): Promise<InventoryApiItemsResponse> {
   const session = getStoredSessionOrThrow();
+  const requestBody =
+    payload.items && payload.items.length > 0
+      ? {
+          items: payload.items.map((item) => ({
+            product_id: item.product_id,
+            system_quantity: item.system_quantity,
+            counted_quantity: item.counted_quantity,
+          })),
+        }
+      : {
+          product_ids: payload.product_ids ?? [],
+        };
+
   return request<InventoryApiItemsResponse>(
     session.apiBaseUrl,
     `/api/v1/inventories/${inventoryId}/items`,
@@ -276,7 +293,7 @@ export async function addInventoryItemsFromSession(inventoryId: string, productI
     {
       method: "POST",
       tenantId: session.selectedTenantId,
-      body: JSON.stringify({ product_ids: productIds }),
+      body: JSON.stringify(requestBody),
     },
   );
 }

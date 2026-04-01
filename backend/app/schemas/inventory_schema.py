@@ -3,7 +3,7 @@ from datetime import datetime
 from math import ceil
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 InventoryStatus = Literal["created", "counting", "recounting", "review", "finished"]
 InventoryItemStatus = Literal["pending", "counted", "divergent"]
@@ -57,8 +57,26 @@ class InventoryListResponse(BaseModel):
         )
 
 
+class InventoryItemUpsertPayload(BaseModel):
+    product_id: uuid.UUID
+    system_quantity: int | None = Field(default=None, ge=0)
+    counted_quantity: int | None = Field(default=None, ge=0)
+
+
 class InventoryItemsUpsertRequest(BaseModel):
-    product_ids: list[uuid.UUID] = Field(min_length=1, max_length=200)
+    product_ids: list[uuid.UUID] | None = Field(default=None, min_length=1, max_length=200)
+    items: list[InventoryItemUpsertPayload] | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_sources(self) -> "InventoryItemsUpsertRequest":
+        has_product_ids = bool(self.product_ids)
+        has_items = bool(self.items)
+
+        if not has_product_ids and not has_items:
+            raise ValueError("Informe ao menos um produto para vincular ao inventario.")
+        if has_product_ids and has_items:
+            raise ValueError("Envie apenas um formato por requisicao: product_ids ou items.")
+        return self
 
 
 class InventoryItemResponse(BaseModel):

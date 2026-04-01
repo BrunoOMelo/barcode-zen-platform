@@ -22,6 +22,8 @@ from app.repositories.inventory_repository import InventoryRepository
 from app.schemas.inventory_schema import (
     CountType,
     InventoryCountCreate,
+    InventoryItemUpsertPayload,
+    InventoryItemsUpsertRequest,
     InventoryStatus,
 )
 
@@ -120,23 +122,35 @@ class InventoryService:
         *,
         tenant_id: uuid.UUID,
         inventory_id: uuid.UUID,
-        product_ids: list[uuid.UUID],
+        payload: InventoryItemsUpsertRequest,
+        actor_user_id: uuid.UUID | None = None,
     ) -> list[tuple[InventoryItem, Product]]:
         inventory = self.get_inventory(tenant_id=tenant_id, inventory_id=inventory_id)
         if inventory.status not in self._MUTABLE_ITEM_STATUSES:
             raise InventoryItemsMutationNotAllowedException()
 
-        unique_product_ids = list(dict.fromkeys(product_ids))
+        items_payload = payload.items
+        if items_payload is None:
+            items_payload = [InventoryItemUpsertPayload(product_id=product_id) for product_id in payload.product_ids or []]
+
+        unique_items_by_product: dict[uuid.UUID, InventoryItemUpsertPayload] = {}
+        for item_payload in items_payload:
+            unique_items_by_product[item_payload.product_id] = item_payload
 
         try:
-            for product_id in unique_product_ids:
-                product = self.repository.get_product_in_tenant(product_id=product_id, tenant_id=tenant_id)
+            for item_payload in unique_items_by_product.values():
+                product = self.repository.get_product_in_tenant(product_id=item_payload.product_id, tenant_id=tenant_id)
                 if product is None:
                     raise ProductNotInTenantException()
+                should_mark_counted = item_payload.counted_quantity is not None
                 self.repository.create_inventory_item(
                     tenant_id=tenant_id,
                     inventory_id=inventory_id,
                     product=product,
+                    system_quantity=item_payload.system_quantity,
+                    counted_quantity=item_payload.counted_quantity,
+                    counted_by=actor_user_id if should_mark_counted else None,
+                    counted_at=datetime.now(UTC) if should_mark_counted else None,
                 )
             self.db.commit()
         except IntegrityError as exc:
