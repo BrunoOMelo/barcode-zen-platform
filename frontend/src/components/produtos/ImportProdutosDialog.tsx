@@ -70,6 +70,17 @@ function normalizeHeader(header: string): keyof ParsedRow | null {
   return COLUMN_MAP[normalized] ?? null;
 }
 
+function buildRowKey(row: ParsedRow): string {
+  return `${row.descricao}::${row.sku}::${row.codigo_barras}`;
+}
+
+function getImportErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+  return "Falha ao importar produto.";
+}
+
 async function listAllProductsForValidation() {
   const first = await listProductsFromSession({ page: 1, pageSize: 100 });
   const items = [...first.items];
@@ -104,13 +115,24 @@ export function ImportProdutosDialog({ open, onOpenChange }: ImportProdutosDialo
 
   const processFile = async (file: File) => {
     setFileName(file.name);
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: "array" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+    let jsonData: Record<string, unknown>[] = [];
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const firstSheetName = workbook.SheetNames[0];
+      if (!firstSheetName) {
+        toast.error("Arquivo sem planilha valida. Use CSV, XLSX ou XLS.");
+        return;
+      }
+      const sheet = workbook.Sheets[firstSheetName];
+      jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+    } catch {
+      toast.error("Nao foi possivel ler o arquivo. Use CSV, XLSX ou XLS valido.");
+      return;
+    }
 
     if (!jsonData.length) {
-      toast.error("Arquivo vazio ou sem dados validos.");
+      toast.error("Arquivo vazio ou sem linhas de produtos.");
       return;
     }
 
@@ -122,7 +144,7 @@ export function ImportProdutosDialog({ open, onOpenChange }: ImportProdutosDialo
     }
 
     if (!Object.values(mapping).includes("descricao")) {
-      toast.error("Coluna 'descricao' nao encontrada.");
+      toast.error("Coluna obrigatoria 'descricao' nao encontrada. Baixe a planilha padrao.");
       return;
     }
 
@@ -220,16 +242,22 @@ export function ImportProdutosDialog({ open, onOpenChange }: ImportProdutosDialo
   const errorRows = rows.filter((row) => row.status === "erro");
 
   const handleImport = async () => {
-    if (!validRows.length) return;
+    if (!validRows.length) {
+      toast.error("Nenhum produto valido para importar.");
+      setStep("preview");
+      return;
+    }
     setStep("importing");
 
     let successCount = 0;
     let failedCount = 0;
+    const failedRows = new Map<string, string>();
 
     for (const row of validRows) {
       const barcode = row.codigo_barras || row.sku;
       if (!barcode) {
         failedCount += 1;
+        failedRows.set(buildRowKey(row), "Informe SKU ou codigo de barras.");
         continue;
       }
       try {
@@ -243,8 +271,9 @@ export function ImportProdutosDialog({ open, onOpenChange }: ImportProdutosDialo
           quantity: 0,
         });
         successCount += 1;
-      } catch {
+      } catch (error: unknown) {
         failedCount += 1;
+        failedRows.set(buildRowKey(row), getImportErrorMessage(error));
       }
     }
 
@@ -254,7 +283,21 @@ export function ImportProdutosDialog({ open, onOpenChange }: ImportProdutosDialo
       toast.success(`${successCount} produto(s) importado(s) com sucesso.`);
     }
     if (failedCount > 0) {
-      toast.warning(`${failedCount} produto(s) nao puderam ser importados.`);
+      setRows((previousRows) =>
+        previousRows.map((row) => {
+          const rowKey = buildRowKey(row);
+          const importError = failedRows.get(rowKey);
+          if (!importError) {
+            return row;
+          }
+          return {
+            ...row,
+            status: "erro",
+            errors: [...row.errors, importError],
+          };
+        }),
+      );
+      toast.warning(`${failedCount} produto(s) nao puderam ser importados. Revise a coluna de detalhes.`);
       setStep("preview");
       return;
     }
@@ -326,6 +369,11 @@ export function ImportProdutosDialog({ open, onOpenChange }: ImportProdutosDialo
                 </Badge>
               )}
             </div>
+            {(duplicateRows.length > 0 || errorRows.length > 0) && (
+              <p className="text-xs text-muted-foreground">
+                Revise as linhas com status "Duplicado" ou "Erro". Apenas linhas com status "OK" serao importadas.
+              </p>
+            )}
 
             <ScrollArea className="max-h-[400px] flex-1 rounded-md border">
               <Table>
@@ -337,6 +385,7 @@ export function ImportProdutosDialog({ open, onOpenChange }: ImportProdutosDialo
                     <TableHead>Codigo de Barras</TableHead>
                     <TableHead>Categoria</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Detalhes</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -351,6 +400,9 @@ export function ImportProdutosDialog({ open, onOpenChange }: ImportProdutosDialo
                         {row.status === "ok" && <Badge variant="default">OK</Badge>}
                         {row.status === "duplicado" && <Badge variant="secondary">Duplicado</Badge>}
                         {row.status === "erro" && <Badge variant="destructive">Erro</Badge>}
+                      </TableCell>
+                      <TableCell className="max-w-[240px] text-xs text-muted-foreground">
+                        {row.errors.length > 0 ? row.errors.join(" | ") : "Pronto para importar"}
                       </TableCell>
                     </TableRow>
                   ))}

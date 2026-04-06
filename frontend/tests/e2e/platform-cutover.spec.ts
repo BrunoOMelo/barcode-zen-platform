@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { expect, test } from "@playwright/test";
+import * as XLSX from "xlsx";
 
 interface SeedData {
   apiBaseUrl: string;
@@ -21,11 +22,81 @@ interface SeedData {
   };
 }
 
+interface ImportRowData {
+  descricao: string;
+  sku: string;
+  codigo_barras: string;
+  categoria: string;
+  custo: string;
+}
+
+type SpreadsheetFormat = "csv" | "xlsx" | "xls";
+
 function loadSeed(): SeedData {
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
   const seedPath = path.resolve(currentDir, "..", "..", ".e2e-seed.json");
   const raw = fs.readFileSync(seedPath, "utf-8");
   return JSON.parse(raw) as SeedData;
+}
+
+function generateImportRow(format: SpreadsheetFormat): ImportRowData {
+  const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  return {
+    descricao: `Produto Import ${format.toUpperCase()} ${suffix}`,
+    sku: `IMP-${format.toUpperCase()}-${suffix.slice(-8)}`,
+    codigo_barras: `789${suffix.slice(-10)}`,
+    categoria: "Importacao",
+    custo: "10.50",
+  };
+}
+
+function buildSpreadsheetFile(format: SpreadsheetFormat, row: ImportRowData): {
+  name: string;
+  mimeType: string;
+  buffer: Buffer;
+} {
+  if (format === "csv") {
+    const csvContent = [
+      "descricao,sku,codigo_barras,categoria,custo",
+      `"${row.descricao}","${row.sku}","${row.codigo_barras}","${row.categoria}","${row.custo}"`,
+    ].join("\n");
+    return {
+      name: `import-${Date.now()}.csv`,
+      mimeType: "text/csv",
+      buffer: Buffer.from(csvContent, "utf-8"),
+    };
+  }
+
+  const worksheet = XLSX.utils.json_to_sheet([row]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Produtos");
+
+  const fileExtension = format === "xlsx" ? "xlsx" : "xls";
+  const mimeType =
+    format === "xlsx"
+      ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      : "application/vnd.ms-excel";
+
+  return {
+    name: `import-${Date.now()}.${fileExtension}`,
+    mimeType,
+    buffer: XLSX.write(workbook, { type: "buffer", bookType: fileExtension }),
+  };
+}
+
+function buildCsvFile(headers: string[], rows: string[][], namePrefix: string): {
+  name: string;
+  mimeType: string;
+  buffer: Buffer;
+} {
+  const headerLine = headers.join(",");
+  const rowLines = rows.map((row) => row.map((value) => `"${value}"`).join(","));
+  const csvContent = [headerLine, ...rowLines].join("\n");
+  return {
+    name: `${namePrefix}-${Date.now()}.csv`,
+    mimeType: "text/csv",
+    buffer: Buffer.from(csvContent, "utf-8"),
+  };
 }
 
 async function platformLogin(
@@ -40,6 +111,49 @@ async function platformLogin(
   await page.getByRole("button", { name: "Validar acesso" }).click();
   await page.getByRole("button", { name: "Entrar no sistema" }).click();
   await expect(page).toHaveURL(/\/estoque$/);
+}
+
+async function importSpreadsheetAndValidate(
+  page: import("@playwright/test").Page,
+  format: SpreadsheetFormat,
+) {
+  const row = generateImportRow(format);
+  const spreadsheetFile = buildSpreadsheetFile(format, row);
+
+  await page.getByRole("button", { name: "Importar" }).first().click();
+
+  const importDialog = page.getByRole("dialog");
+  await expect(importDialog.getByText("Importar Produtos")).toBeVisible();
+
+  await page.locator("#import-file-input").setInputFiles(spreadsheetFile);
+
+  await expect(importDialog.getByText(/Validos:\s*1/)).toBeVisible();
+
+  const createProductResponsePromise = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/v1/products/") &&
+      response.request().method() === "POST",
+  );
+
+  await importDialog.getByRole("button", { name: /^Importar \d+ produto\(s\)$/ }).click();
+
+  const createProductResponse = await createProductResponsePromise;
+  expect(createProductResponse.status()).toBe(201);
+
+  await expect(importDialog).toBeHidden();
+
+  const searchInput = page.locator('input[placeholder="Buscar por SKU, codigo ou descricao..."]');
+  await searchInput.fill(row.sku);
+
+  await expect(page.getByRole("cell", { name: row.descricao }).first()).toBeVisible();
+  await expect(page.getByRole("cell", { name: row.codigo_barras }).first()).toBeVisible();
+}
+
+async function openImportDialog(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: "Importar" }).first().click();
+  const importDialog = page.getByRole("dialog");
+  await expect(importDialog.getByText("Importar Produtos")).toBeVisible();
+  return importDialog;
 }
 
 test("admin can navigate and load tenant scoped data", async ({ page }) => {
@@ -166,4 +280,101 @@ test("viewer is blocked from product creation by backend authorization", async (
   await page.getByRole("button", { name: "Criar Produto" }).click();
   const createResponse = await createResponsePromise;
   expect(createResponse.status()).toBe(403);
+});
+
+for (const format of ["csv", "xlsx", "xls"] as const) {
+  test(`admin can import products from ${format.toUpperCase()} spreadsheet`, async ({ page }) => {
+    const seed = loadSeed();
+    await platformLogin(page, seed.apiBaseUrl, {
+      email: seed.admin.email,
+      password: seed.admin.password,
+    });
+
+    await importSpreadsheetAndValidate(page, format);
+  });
+}
+
+test("admin sees clear error for empty spreadsheet", async ({ page }) => {
+  const seed = loadSeed();
+  await platformLogin(page, seed.apiBaseUrl, {
+    email: seed.admin.email,
+    password: seed.admin.password,
+  });
+
+  await openImportDialog(page);
+  const emptyFile = buildCsvFile(
+    ["descricao", "sku", "codigo_barras", "categoria", "custo"],
+    [],
+    "empty-import",
+  );
+  await page.locator("#import-file-input").setInputFiles(emptyFile);
+
+  await expect(page.getByText("Arquivo vazio ou sem linhas de produtos.")).toBeVisible();
+});
+
+test("admin sees clear error when required descricao column is missing", async ({ page }) => {
+  const seed = loadSeed();
+  await platformLogin(page, seed.apiBaseUrl, {
+    email: seed.admin.email,
+    password: seed.admin.password,
+  });
+
+  await openImportDialog(page);
+  const invalidColumnsFile = buildCsvFile(
+    ["sku", "codigo_barras", "categoria", "custo"],
+    [["SKU-SEM-DESCRICAO-001", "7890000000010", "Teste", "9.99"]],
+    "missing-description-column",
+  );
+  await page.locator("#import-file-input").setInputFiles(invalidColumnsFile);
+
+  await expect(page.getByText("Coluna obrigatoria 'descricao' nao encontrada. Baixe a planilha padrao.")).toBeVisible();
+});
+
+test("admin sees duplicate row details clearly during preview", async ({ page }) => {
+  const seed = loadSeed();
+  await platformLogin(page, seed.apiBaseUrl, {
+    email: seed.admin.email,
+    password: seed.admin.password,
+  });
+
+  await openImportDialog(page);
+  const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  const duplicatedSku = `IMP-DUP-${suffix.slice(-8)}`;
+  const duplicateFile = buildCsvFile(
+    ["descricao", "sku", "codigo_barras", "categoria", "custo"],
+    [
+      [`Produto Duplicado A ${suffix}`, duplicatedSku, `789${suffix.slice(-10)}`, "Teste", "10.00"],
+      [`Produto Duplicado B ${suffix}`, duplicatedSku, `780${suffix.slice(-10)}`, "Teste", "12.00"],
+    ],
+    "duplicate-rows",
+  );
+  await page.locator("#import-file-input").setInputFiles(duplicateFile);
+
+  const importDialog = page.getByRole("dialog");
+  await expect(importDialog.getByText(/Duplicados:\s*1/)).toBeVisible();
+  await expect(importDialog.getByText("SKU duplicado na linha 2")).toBeVisible();
+  await expect(
+    importDialog.getByText('Revise as linhas com status "Duplicado" ou "Erro". Apenas linhas com status "OK" serao importadas.'),
+  ).toBeVisible();
+});
+
+test("admin sees clear error for unreadable spreadsheet file", async ({ page }) => {
+  const seed = loadSeed();
+  await platformLogin(page, seed.apiBaseUrl, {
+    email: seed.admin.email,
+    password: seed.admin.password,
+  });
+
+  await openImportDialog(page);
+  await page.locator("#import-file-input").setInputFiles({
+    name: `invalid-${Date.now()}.xlsx`,
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: Buffer.from([0x00, 0x01, 0x02, 0x03, 0xff]),
+  });
+
+  await expect(
+    page.getByText(
+      /Nao foi possivel ler o arquivo\. Use CSV, XLSX ou XLS valido\.|Arquivo sem planilha valida\. Use CSV, XLSX ou XLS\.|Arquivo vazio ou sem linhas de produtos\./,
+    ),
+  ).toBeVisible();
 });
