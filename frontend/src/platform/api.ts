@@ -6,6 +6,8 @@ import type {
   InventoryApiCountListResponse,
   InventoryApiCountRow,
   InventoryApiItem,
+  InventoryImportApiRequest,
+  InventoryImportApiResponse,
   InventoryApiItemsUpsertRequest,
   InventoryApiItemsResponse,
   InventoryApiListResponse,
@@ -236,6 +238,22 @@ export async function createInventoryFromSession(name: string): Promise<Inventor
     tenantId: session.selectedTenantId,
     body: JSON.stringify({ name }),
   });
+}
+
+export async function createInventoryFromSpreadsheetFromSession(
+  payload: InventoryImportApiRequest,
+): Promise<InventoryImportApiResponse> {
+  const session = getStoredSessionOrThrow();
+  return request<InventoryImportApiResponse>(
+    session.apiBaseUrl,
+    "/api/v1/inventories/import",
+    session.token,
+    {
+      method: "POST",
+      tenantId: session.selectedTenantId,
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export async function changeInventoryStatusFromSession(

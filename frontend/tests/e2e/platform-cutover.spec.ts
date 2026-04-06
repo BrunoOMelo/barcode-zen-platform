@@ -30,6 +30,15 @@ interface ImportRowData {
   custo: string;
 }
 
+interface InventoryImportRowData {
+  descricao: string;
+  sku: string;
+  codigo_barras: string;
+  categoria: string;
+  custo: string;
+  saldo_inicial: string;
+}
+
 type SpreadsheetFormat = "csv" | "xlsx" | "xls";
 
 function loadSeed(): SeedData {
@@ -94,6 +103,39 @@ function buildCsvFile(headers: string[], rows: string[][], namePrefix: string): 
   const csvContent = [headerLine, ...rowLines].join("\n");
   return {
     name: `${namePrefix}-${Date.now()}.csv`,
+    mimeType: "text/csv",
+    buffer: Buffer.from(csvContent, "utf-8"),
+  };
+}
+
+function buildInventoryImportCsvFile(rows: InventoryImportRowData[]): {
+  name: string;
+  mimeType: string;
+  buffer: Buffer;
+} {
+  const headers = [
+    "Descricao do produto",
+    "SKU",
+    "Codigo EAN",
+    "Categoria do produto",
+    "Custo",
+    "Saldo inicial",
+  ];
+  const rowLines = rows.map((row) =>
+    [
+      row.descricao,
+      row.sku,
+      row.codigo_barras,
+      row.categoria,
+      row.custo,
+      row.saldo_inicial,
+    ]
+      .map((value) => `"${value}"`)
+      .join(","),
+  );
+  const csvContent = [headers.join(","), ...rowLines].join("\n");
+  return {
+    name: `inventory-import-${Date.now()}.csv`,
     mimeType: "text/csv",
     buffer: Buffer.from(csvContent, "utf-8"),
   };
@@ -377,4 +419,77 @@ test("admin sees clear error for unreadable spreadsheet file", async ({ page }) 
       /Nao foi possivel ler o arquivo\. Use CSV, XLSX ou XLS valido\.|Arquivo sem planilha valida\. Use CSV, XLSX ou XLS\.|Arquivo vazio ou sem linhas de produtos\./,
     ),
   ).toBeVisible();
+});
+
+test("admin can create inventory from spreadsheet and auto-create missing products", async ({ page }) => {
+  const seed = loadSeed();
+  await platformLogin(page, seed.apiBaseUrl, {
+    email: seed.admin.email,
+    password: seed.admin.password,
+  });
+
+  const suffix = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
+  const inventoryName = `Inventario Importado ${suffix}`;
+  const newSku = `INV-NEW-${suffix.slice(-8)}`;
+  const newBarcode = `789${suffix.slice(-10)}`;
+  const importFile = buildInventoryImportCsvFile([
+    {
+      descricao: "Produto E2E Alpha",
+      sku: "E2E-ALPHA-001",
+      codigo_barras: "7890000000001",
+      categoria: "E2E",
+      custo: "10.00",
+      saldo_inicial: "15",
+    },
+    {
+      descricao: `Produto Importado Inventario ${suffix}`,
+      sku: newSku,
+      codigo_barras: newBarcode,
+      categoria: "Importacao",
+      custo: "11.75",
+      saldo_inicial: "12",
+    },
+  ]);
+
+  await page.getByRole("tab", { name: /Inventar/i }).click();
+  await page.getByRole("button", { name: "Novo inventario" }).click();
+  await expect(page).toHaveURL(/\/inventarios\/criar$/);
+
+  await page.locator("#nome").fill(inventoryName);
+  await page.getByRole("button", { name: "Importar planilha" }).click();
+
+  const importDialog = page.getByRole("dialog");
+  await expect(importDialog.getByText("Importar Inventario por Planilha")).toBeVisible();
+  await importDialog.locator("#inventory-import-name").fill(inventoryName);
+  await page.locator("#inventory-import-file-input").setInputFiles(importFile);
+
+  await expect(importDialog.getByText(/Validos:\s*2/)).toBeVisible();
+
+  const importResponsePromise = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/v1/inventories/import") &&
+      response.request().method() === "POST",
+  );
+
+  await importDialog.getByRole("button", { name: /Criar inventario com 2 item\(ns\)/ }).click();
+
+  const importResponse = await importResponsePromise;
+  expect(importResponse.status()).toBe(201);
+  const importBody = (await importResponse.json()) as {
+    summary: {
+      created_products: number;
+      inventory_items_created: number;
+    };
+  };
+  expect(importBody.summary.inventory_items_created).toBe(2);
+  expect(importBody.summary.created_products).toBe(1);
+
+  await expect(page).toHaveURL(/\/estoque$/);
+  await page.getByRole("tab", { name: /Inventar/i }).click();
+  await expect(page.getByText(inventoryName)).toBeVisible();
+
+  await page.getByRole("tab", { name: /Produtos/i }).click();
+  const searchInput = page.locator('input[placeholder="Buscar por SKU, codigo ou descricao..."]');
+  await searchInput.fill(newSku);
+  await expect(page.getByRole("cell", { name: newBarcode }).first()).toBeVisible();
 });

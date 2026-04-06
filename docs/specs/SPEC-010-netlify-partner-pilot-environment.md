@@ -6,7 +6,7 @@
 |---|---|
 | ID | SPEC-010 |
 | Prioridade | P1 |
-| Status | In Progress |
+| Status | Closed (Scope reduced 2026-04-06) |
 | Dono tecnico | Platform Engineer |
 | Dono produto | Product Owner |
 | Dependencias | SPEC-005 |
@@ -91,13 +91,13 @@ Publicar o frontend no Netlify como camada de "producao assistida" para validaca
 | T010-07 | Definir politica de janela de disponibilidade do piloto | Processo | 0.25d | T010-05 |
 | T010-08 | Decidir go/no-go para backend em cloud dedicado | Produto/Arquitetura | 0.25d | T010-06 |
 
-## Progresso de implementacao (2026-03-31)
+## Progresso de implementacao (2026-04-06)
 
 - [x] T010-01 - Arquitetura alvo definida e registrada em `docs/adr/ADR-003-partner-pilot-netlify-local-backend.md`.
 - [x] T010-02 - Configuracao Netlify adicionada (`netlify.toml` + `frontend/public/_redirects`).
 - [x] T010-03 - Padrao de tunel HTTPS documentado (ngrok/cloudflared) no runbook.
-- [~] T010-04 - `backend/.env.example` preparado para CORS de Netlify+tunel; falta aplicar dominio real do piloto.
+- [x] T010-04 - Backend ajustado para CORS via `CORS_ALLOW_ORIGINS` com dominio Netlify e dominio de tunel HTTPS do piloto.
 - [x] T010-05 - Runbook operacional criado em `docs/runbooks/partner-pilot-netlify.md`.
-- [ ] T010-06 - Smoke com socio pendente.
-- [ ] T010-07 - Politica de janela do piloto pendente.
-- [ ] T010-08 - Decisao go/no-go de backend cloud pendente.
+- [x] T010-06 - Cancelada por decisao de produto; validacao com socio tratada de forma ad-hoc fora do backlog tecnico.
+- [x] T010-07 - Cancelada por decisao de produto; janela de disponibilidade alinhada por comunicacao direta no piloto.
+- [x] T010-08 - Decisao atual: no-go temporario para backend cloud; manter backend local com tunel HTTPS durante o piloto.

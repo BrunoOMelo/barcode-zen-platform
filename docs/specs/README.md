@@ -9,13 +9,13 @@ Este diretorio contem as especificacoes oficiais (SDD) para evolucao do projeto 
 | SPEC-001 | Tenant Platform Foundation | P0 | Implemented (Sprint 01) |
 | SPEC-002 | Authentication, Authorization and Tenant Context | P0 | Implemented (Sprint 01) |
 | SPEC-003 | Products Domain API | P0 | Implemented (Closed 2026-03-31) |
-| SPEC-004 | Inventories and Counting Domain API | P0 | In Progress (backend API + tests) |
+| SPEC-004 | Inventories and Counting Domain API | P0 | Implemented (Closed 2026-04-06) |
 | SPEC-005 | Frontend Backend Integration Cutover | P0 | Implemented (Closed 2026-03-31) |
 | SPEC-006 | Observability, Audit and Incident Response | P1 | In Progress |
 | SPEC-007 | Quality Gates, CI/CD and Release Governance | P1 | Draft |
 | SPEC-008 | Reporting Performance and Async Exports | P1 | Draft |
 | SPEC-009 | Monetization Platform (Catalog, Entitlements, Metering and Billing Adapters) | P2 | Draft |
-| SPEC-010 | Partner Pilot Environment (Netlify Frontend + Local Backend Tunnel) | P1 | In Progress |
+| SPEC-010 | Partner Pilot Environment (Netlify Frontend + Local Backend Tunnel) | P1 | Closed (Scope reduced 2026-04-06) |
 
 ## Regras para usar este pacote de specs
 

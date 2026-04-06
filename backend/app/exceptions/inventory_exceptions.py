@@ -63,3 +63,21 @@ class InventoryItemsMutationNotAllowedException(DomainException):
             status_code=400,
             code="inventory_item.mutation_not_allowed",
         )
+
+
+class InventoryImportNoValidRowsException(DomainException):
+    def __init__(self) -> None:
+        super().__init__(
+            "Nenhuma linha valida para criar o inventario.",
+            status_code=400,
+            code="inventory_import.no_valid_rows",
+        )
+
+
+class InventoryImportFailedException(DomainException):
+    def __init__(self) -> None:
+        super().__init__(
+            "Nao foi possivel concluir a importacao do inventario.",
+            status_code=409,
+            code="inventory_import.failed",
+        )

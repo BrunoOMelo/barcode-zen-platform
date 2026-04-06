@@ -12,6 +12,9 @@ from app.schemas.inventory_schema import (
     InventoryCountListResponse,
     InventoryCountResponse,
     InventoryCreate,
+    InventoryImportRequest,
+    InventoryImportResponse,
+    InventoryImportSummaryResponse,
     InventoryItemsResponse,
     InventoryItemsUpsertRequest,
     InventoryItemResponse,
@@ -104,6 +107,56 @@ def create_inventory(
         name=payload.name,
     )
     return InventoryResponse.model_validate(inventory)
+
+
+@router.post(
+    "/import",
+    response_model=InventoryImportResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        **INVENTORY_COMMON_ERROR_RESPONSES,
+        400: {
+            "description": "Arquivo sem linhas validas para criar inventario",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Nenhuma linha valida para criar o inventario.",
+                        "code": "inventory_import.no_valid_rows",
+                    }
+                }
+            },
+        },
+        409: {
+            "description": "Falha de processamento da importacao",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Nao foi possivel concluir a importacao do inventario.",
+                        "code": "inventory_import.failed",
+                    }
+                }
+            },
+        },
+    },
+    summary="Create inventory from spreadsheet rows with product upsert",
+)
+def create_inventory_from_spreadsheet(
+    payload: InventoryImportRequest,
+    _: None = Depends(require_permission(Permission.INVENTORIES_WRITE)),
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    service: InventoryService = Depends(get_inventory_service),
+) -> InventoryImportResponse:
+    inventory, summary, errors = service.import_inventory_from_rows(
+        tenant_id=tenant_id,
+        created_by=current_user.user_id,
+        payload=payload,
+    )
+    return InventoryImportResponse(
+        inventory=InventoryResponse.model_validate(inventory),
+        summary=InventoryImportSummaryResponse(**summary),
+        errors=errors,
+    )
 
 
 @router.get(

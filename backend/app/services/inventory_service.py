@@ -1,5 +1,7 @@
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -7,6 +9,8 @@ from sqlalchemy.orm import Session
 from app.exceptions.inventory_exceptions import (
     InventoryCountNotAllowedException,
     InventoryCountTypeInvalidException,
+    InventoryImportFailedException,
+    InventoryImportNoValidRowsException,
     InventoryInvalidStatusTransitionException,
     InventoryItemAlreadyExistsException,
     InventoryItemNotFoundException,
@@ -22,10 +26,31 @@ from app.repositories.inventory_repository import InventoryRepository
 from app.schemas.inventory_schema import (
     CountType,
     InventoryCountCreate,
+    InventoryImportErrorRow,
+    InventoryImportRequest,
     InventoryItemUpsertPayload,
     InventoryItemsUpsertRequest,
     InventoryStatus,
 )
+
+
+@dataclass(slots=True)
+class _PreparedNewProduct:
+    name: str
+    sku: str
+    barcode: str
+    category: str | None
+    cost: Decimal | None
+    quantity: int
+
+
+@dataclass(slots=True)
+class _PreparedImportRow:
+    source_row: int | None
+    identifier: str | None
+    system_quantity: int
+    existing_product: Product | None = None
+    new_product: _PreparedNewProduct | None = None
 
 
 class InventoryService:
@@ -75,6 +100,70 @@ class InventoryService:
         )
         self.db.commit()
         return inventory
+
+    def import_inventory_from_rows(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        created_by: uuid.UUID,
+        payload: InventoryImportRequest,
+    ) -> tuple[Inventory, dict[str, int], list[InventoryImportErrorRow]]:
+        prepared_rows, errors = self._prepare_import_rows(tenant_id=tenant_id, payload=payload)
+        if not prepared_rows:
+            raise InventoryImportNoValidRowsException()
+
+        total_rows = len(payload.rows)
+        created_products = 0
+        linked_existing_products = 0
+        inventory_items_created = 0
+
+        try:
+            inventory = self.repository.create_inventory(
+                tenant_id=tenant_id,
+                created_by=created_by,
+                name=payload.name.strip(),
+            )
+
+            for row in prepared_rows:
+                if row.existing_product is not None:
+                    product = row.existing_product
+                    linked_existing_products += 1
+                elif row.new_product is not None:
+                    product = self.repository.create_product_for_import(
+                        tenant_id=tenant_id,
+                        name=row.new_product.name,
+                        sku=row.new_product.sku,
+                        barcode=row.new_product.barcode,
+                        category=row.new_product.category,
+                        cost=row.new_product.cost,
+                        quantity=row.new_product.quantity,
+                    )
+                    created_products += 1
+                else:  # pragma: no cover
+                    continue
+
+                self.repository.create_inventory_item(
+                    tenant_id=tenant_id,
+                    inventory_id=inventory.id,
+                    product=product,
+                    system_quantity=row.system_quantity,
+                )
+                inventory_items_created += 1
+
+            self.db.commit()
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise InventoryImportFailedException() from exc
+
+        summary = {
+            "total_rows": total_rows,
+            "processed_rows": len(prepared_rows),
+            "created_products": created_products,
+            "linked_existing_products": linked_existing_products,
+            "inventory_items_created": inventory_items_created,
+            "skipped_rows": len(errors),
+        }
+        return inventory, summary, errors
 
     def change_status(
         self,
@@ -225,6 +314,157 @@ class InventoryService:
             product_id=product_id,
         )
 
+    def _prepare_import_rows(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        payload: InventoryImportRequest,
+    ) -> tuple[list[_PreparedImportRow], list[InventoryImportErrorRow]]:
+        skus: set[str] = set()
+        barcodes: set[str] = set()
+        for row in payload.rows:
+            normalized_sku = self._normalize_identifier(row.sku)
+            normalized_barcode = self._normalize_identifier(row.barcode)
+            if normalized_sku:
+                skus.add(normalized_sku)
+            if normalized_barcode:
+                barcodes.add(normalized_barcode)
+
+        existing_products = self.repository.list_products_by_identifiers(
+            tenant_id=tenant_id,
+            skus=skus,
+            barcodes=barcodes,
+        )
+        existing_by_sku = {product.sku: product for product in existing_products}
+        existing_by_barcode = {product.barcode: product for product in existing_products}
+
+        prepared_rows: list[_PreparedImportRow] = []
+        errors: list[InventoryImportErrorRow] = []
+        seen_existing_product_ids: set[uuid.UUID] = set()
+        seen_new_skus: set[str] = set()
+        seen_new_barcodes: set[str] = set()
+
+        for row in payload.rows:
+            source_row = row.source_row
+            name = row.name.strip()
+            sku = self._normalize_identifier(row.sku)
+            barcode = self._normalize_identifier(row.barcode)
+            identifier = barcode or sku
+
+            if not name:
+                errors.append(
+                    self._build_import_error(
+                        source_row=source_row,
+                        identifier=identifier,
+                        message="Linha sem descricao de produto.",
+                    )
+                )
+                continue
+
+            if sku is None and barcode is None:
+                errors.append(
+                    self._build_import_error(
+                        source_row=source_row,
+                        identifier=None,
+                        message="Informe SKU ou codigo de barras.",
+                    )
+                )
+                continue
+
+            product_from_sku = existing_by_sku.get(sku) if sku else None
+            product_from_barcode = existing_by_barcode.get(barcode) if barcode else None
+            if (
+                product_from_sku is not None
+                and product_from_barcode is not None
+                and product_from_sku.id != product_from_barcode.id
+            ):
+                errors.append(
+                    self._build_import_error(
+                        source_row=source_row,
+                        identifier=identifier,
+                        message="SKU e codigo de barras apontam para produtos diferentes.",
+                    )
+                )
+                continue
+
+            existing_product = product_from_barcode or product_from_sku
+            if existing_product is not None:
+                if existing_product.id in seen_existing_product_ids:
+                    errors.append(
+                        self._build_import_error(
+                            source_row=source_row,
+                            identifier=identifier,
+                            message="Produto repetido na planilha para este inventario.",
+                        )
+                    )
+                    continue
+
+                seen_existing_product_ids.add(existing_product.id)
+                resolved_system_quantity = (
+                    existing_product.quantity if row.initial_quantity is None else row.initial_quantity
+                )
+                prepared_rows.append(
+                    _PreparedImportRow(
+                        source_row=source_row,
+                        identifier=identifier,
+                        system_quantity=max(0, resolved_system_quantity),
+                        existing_product=existing_product,
+                    )
+                )
+                continue
+
+            resolved_sku = sku or barcode
+            resolved_barcode = barcode or sku
+            if resolved_sku is None or resolved_barcode is None:
+                errors.append(
+                    self._build_import_error(
+                        source_row=source_row,
+                        identifier=identifier,
+                        message="Informe SKU ou codigo de barras.",
+                    )
+                )
+                continue
+
+            if resolved_sku in seen_new_skus:
+                errors.append(
+                    self._build_import_error(
+                        source_row=source_row,
+                        identifier=resolved_sku,
+                        message="SKU duplicado na planilha.",
+                    )
+                )
+                continue
+
+            if resolved_barcode in seen_new_barcodes:
+                errors.append(
+                    self._build_import_error(
+                        source_row=source_row,
+                        identifier=resolved_barcode,
+                        message="Codigo de barras duplicado na planilha.",
+                    )
+                )
+                continue
+
+            seen_new_skus.add(resolved_sku)
+            seen_new_barcodes.add(resolved_barcode)
+            prepared_rows.append(
+                _PreparedImportRow(
+                    source_row=source_row,
+                    identifier=identifier,
+                    system_quantity=max(0, row.initial_quantity or 0),
+                    new_product=_PreparedNewProduct(
+                        name=name,
+                        sku=resolved_sku,
+                        barcode=resolved_barcode,
+                        category=self._normalize_optional_text(row.category),
+                        cost=row.cost,
+                        quantity=max(0, row.initial_quantity or 0),
+                    ),
+                )
+            )
+
+        return prepared_rows, errors
+
     @staticmethod
     def _resolve_count_type(
         *,
@@ -243,3 +483,30 @@ class InventoryService:
             raise InventoryCountTypeInvalidException()
 
         return payload_count_type or expected
+
+    @staticmethod
+    def _normalize_identifier(value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().upper()
+        return normalized or None
+
+    @staticmethod
+    def _normalize_optional_text(value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @staticmethod
+    def _build_import_error(
+        *,
+        source_row: int | None,
+        identifier: str | None,
+        message: str,
+    ) -> InventoryImportErrorRow:
+        return InventoryImportErrorRow(
+            source_row=source_row,
+            identifier=identifier,
+            message=message,
+        )

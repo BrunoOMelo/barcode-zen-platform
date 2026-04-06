@@ -155,6 +155,42 @@ export interface InventoryApiItemsUpsertRequest {
   items?: InventoryApiItemUpsertPayload[];
 }
 
+export interface InventoryImportApiRowRequest {
+  name: string;
+  sku?: string;
+  barcode?: string;
+  category?: string;
+  cost?: number;
+  initial_quantity?: number;
+  source_row?: number;
+}
+
+export interface InventoryImportApiRequest {
+  name: string;
+  rows: InventoryImportApiRowRequest[];
+}
+
+export interface InventoryImportApiErrorRow {
+  source_row: number | null;
+  identifier: string | null;
+  message: string;
+}
+
+export interface InventoryImportApiSummary {
+  total_rows: number;
+  processed_rows: number;
+  created_products: number;
+  linked_existing_products: number;
+  inventory_items_created: number;
+  skipped_rows: number;
+}
+
+export interface InventoryImportApiResponse {
+  inventory: InventoryApiItem;
+  summary: InventoryImportApiSummary;
+  errors: InventoryImportApiErrorRow[];
+}
+
 export interface InventoryApiCountRow {
   id: string;
   inventory_id: string;

@@ -1,6 +1,7 @@
 ﻿import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { ImportInventarioDialog } from "@/components/inventarios/ImportInventarioDialog";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCreateInventario } from "@/hooks/useInventarios";
 import { useProdutos, type Produto } from "@/hooks/useProdutos";
-import { ArrowLeft, ArrowRight, Check, Search } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Search, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 type Step = 1 | 2 | 3;
@@ -20,6 +21,7 @@ export default function CriarInventario() {
   const [step, setStep] = useState<Step>(1);
   const [nome, setNome] = useState("");
   const [search, setSearch] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [estoques, setEstoques] = useState<Record<string, number>>({});
   const [quantidades, setQuantidades] = useState<Record<string, number | null>>({});
@@ -119,7 +121,11 @@ export default function CriarInventario() {
                 autoFocus
               />
             </div>
-            <div className="flex justify-end">
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button variant="outline" onClick={() => setImportOpen(true)}>
+                <Upload className="mr-2 h-4 w-4" />
+                Importar planilha
+              </Button>
               <Button onClick={() => setStep(2)} disabled={!nome.trim()}>
                 Proximo
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -285,6 +291,13 @@ export default function CriarInventario() {
           </div>
         </div>
       ) : null}
+
+      <ImportInventarioDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        initialInventoryName={nome}
+        onImported={() => navigate("/estoque")}
+      />
     </AppLayout>
   );
 }

@@ -3,6 +3,7 @@ import {
   addInventoryItemsFromSession,
   changeInventoryStatusFromSession,
   createInventoryFromSession,
+  createInventoryFromSpreadsheetFromSession,
   getInventoryFromSession,
   listInventoryCountsFromSession,
   listInventoryItemsFromSession,
@@ -59,6 +60,33 @@ export interface Contagem {
     sku: string | null;
     codigo_barras: string | null;
   };
+}
+
+export interface InventarioImportacaoRowInput {
+  descricao: string;
+  sku?: string;
+  codigo_barras?: string;
+  categoria?: string;
+  custo?: number;
+  saldo_inicial?: number;
+  source_row?: number;
+}
+
+export interface InventarioImportacaoResult {
+  inventario: Inventario;
+  summary: {
+    total_rows: number;
+    processed_rows: number;
+    created_products: number;
+    linked_existing_products: number;
+    inventory_items_created: number;
+    skipped_rows: number;
+  };
+  errors: Array<{
+    source_row: number | null;
+    identifier: string | null;
+    message: string;
+  }>;
 }
 
 const BACKEND_TO_LEGACY_STATUS: Record<BackendInventoryStatus, LegacyInventoryStatus> = {
@@ -288,6 +316,63 @@ export function useCreateInventario() {
     onError: (error: unknown) => {
       const message = error instanceof Error ? error.message : "Falha inesperada ao criar inventario.";
       toast.error(`Erro ao criar inventario: ${message}`);
+    },
+  });
+}
+
+export function useCreateInventarioFromSpreadsheet() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      nome,
+      rows,
+    }: {
+      nome: string;
+      rows: InventarioImportacaoRowInput[];
+    }): Promise<InventarioImportacaoResult> => {
+      ensureInventoriesCutoverEnabled();
+      requirePlatformSessionTenantId();
+
+      const response = await createInventoryFromSpreadsheetFromSession({
+        name: nome.trim(),
+        rows: rows.map((row) => ({
+          name: row.descricao.trim(),
+          sku: row.sku?.trim() || undefined,
+          barcode: row.codigo_barras?.trim() || undefined,
+          category: row.categoria?.trim() || undefined,
+          cost: row.custo,
+          initial_quantity: row.saldo_inicial,
+          source_row: row.source_row,
+        })),
+      });
+
+      return {
+        inventario: mapInventoryFromApi(response.inventory),
+        summary: response.summary,
+        errors: response.errors,
+      };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["inventarios"] });
+      queryClient.invalidateQueries({ queryKey: ["produtos"] });
+      toast.success(
+        `Inventario criado com ${result.summary.inventory_items_created} item(ns).`,
+      );
+      if (result.summary.created_products > 0) {
+        toast.info(
+          `${result.summary.created_products} produto(s) novo(s) foram cadastrados automaticamente.`,
+        );
+      }
+      if (result.summary.skipped_rows > 0) {
+        toast.warning(
+          `${result.summary.skipped_rows} linha(s) foram ignoradas na importacao.`,
+        );
+      }
+    },
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : "Falha inesperada ao importar inventario.";
+      toast.error(`Erro ao importar inventario: ${message}`);
     },
   });
 }

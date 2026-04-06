@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from math import ceil
 from typing import Literal
 
@@ -12,6 +13,29 @@ CountType = Literal["first", "recount"]
 
 class InventoryCreate(BaseModel):
     name: str = Field(min_length=2, max_length=160)
+
+
+class InventoryImportRow(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    sku: str | None = Field(default=None, min_length=2, max_length=64)
+    barcode: str | None = Field(default=None, min_length=2, max_length=32)
+    category: str | None = Field(default=None, max_length=80)
+    cost: Decimal | None = Field(default=None, ge=0)
+    initial_quantity: int | None = Field(default=None, ge=0)
+    source_row: int | None = Field(default=None, ge=2)
+
+    @model_validator(mode="after")
+    def validate_identifier(self) -> "InventoryImportRow":
+        has_sku = bool(self.sku and self.sku.strip())
+        has_barcode = bool(self.barcode and self.barcode.strip())
+        if not has_sku and not has_barcode:
+            raise ValueError("Informe SKU ou codigo de barras para cada linha.")
+        return self
+
+
+class InventoryImportRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=160)
+    rows: list[InventoryImportRow] = Field(min_length=1, max_length=5000)
 
 
 class InventoryStatusUpdate(BaseModel):
@@ -99,6 +123,27 @@ class InventoryItemResponse(BaseModel):
 class InventoryItemsResponse(BaseModel):
     items: list[InventoryItemResponse]
     total: int
+
+
+class InventoryImportErrorRow(BaseModel):
+    source_row: int | None = None
+    identifier: str | None = None
+    message: str
+
+
+class InventoryImportSummaryResponse(BaseModel):
+    total_rows: int
+    processed_rows: int
+    created_products: int
+    linked_existing_products: int
+    inventory_items_created: int
+    skipped_rows: int
+
+
+class InventoryImportResponse(BaseModel):
+    inventory: InventoryResponse
+    summary: InventoryImportSummaryResponse
+    errors: list[InventoryImportErrorRow]
 
 
 class InventoryCountCreate(BaseModel):

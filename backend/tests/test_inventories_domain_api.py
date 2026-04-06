@@ -119,6 +119,7 @@ def _cleanup(
             conn.execute(text("DELETE FROM inventory_counts WHERE tenant_id = :tenant_id"), {"tenant_id": tenant_id})
             conn.execute(text("DELETE FROM inventory_items WHERE tenant_id = :tenant_id"), {"tenant_id": tenant_id})
             conn.execute(text("DELETE FROM inventories WHERE tenant_id = :tenant_id"), {"tenant_id": tenant_id})
+            conn.execute(text("DELETE FROM products WHERE tenant_id = :tenant_id"), {"tenant_id": tenant_id})
         for product_id in product_ids:
             conn.execute(text("DELETE FROM products WHERE id = :id"), {"id": product_id})
         for membership_id in membership_ids:
@@ -243,6 +244,95 @@ def test_inventory_full_flow_create_items_count_recount_and_finish() -> None:
             tenant_ids=[tenant_id],
             membership_ids=[membership_id],
             product_ids=[product_a_id, product_b_id],
+        )
+
+
+def test_inventory_import_from_rows_upserts_products_and_links_items() -> None:
+    user_id = uuid.uuid4()
+    tenant_id = uuid.uuid4()
+    membership_id = uuid.uuid4()
+    existing_product_id = uuid.uuid4()
+
+    existing_sku = f"SKU-EXIST-{uuid.uuid4().hex[:8]}".upper()
+    existing_barcode = f"BC-EXIST-{uuid.uuid4().hex[:8]}".upper()
+    new_sku = f"SKU-NEW-{uuid.uuid4().hex[:8]}".upper()
+    new_barcode = f"BC-NEW-{uuid.uuid4().hex[:8]}".upper()
+
+    _insert_tenant(tenant_id, "IT Inventory Import")
+    _insert_membership(membership_id, user_id, tenant_id, role="admin")
+    _insert_product(
+        existing_product_id,
+        tenant_id,
+        name="Produto Existente",
+        sku=existing_sku,
+        barcode=existing_barcode,
+        quantity=15,
+    )
+    token = _token_for_user(user_id)
+    headers = _headers(token, tenant_id)
+
+    try:
+        response = client.post(
+            "/api/v1/inventories/import",
+            headers=headers,
+            json={
+                "name": "Inventario Importado em Lote",
+                "rows": [
+                    {
+                        "name": "Produto Existente",
+                        "sku": existing_sku,
+                        "barcode": existing_barcode,
+                        "initial_quantity": 30,
+                        "source_row": 2,
+                    },
+                    {
+                        "name": "Produto Novo",
+                        "sku": new_sku,
+                        "barcode": new_barcode,
+                        "category": "Importacao",
+                        "cost": 12.5,
+                        "initial_quantity": 8,
+                        "source_row": 3,
+                    },
+                    {
+                        "name": "Produto Duplicado",
+                        "sku": existing_sku,
+                        "barcode": existing_barcode,
+                        "initial_quantity": 10,
+                        "source_row": 4,
+                    },
+                ],
+            },
+        )
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["inventory"]["status"] == "created"
+        assert body["summary"]["total_rows"] == 3
+        assert body["summary"]["processed_rows"] == 2
+        assert body["summary"]["created_products"] == 1
+        assert body["summary"]["linked_existing_products"] == 1
+        assert body["summary"]["inventory_items_created"] == 2
+        assert body["summary"]["skipped_rows"] == 1
+        assert len(body["errors"]) == 1
+        assert body["errors"][0]["source_row"] == 4
+        assert body["errors"][0]["message"] == "Produto repetido na planilha para este inventario."
+
+        inventory_id = body["inventory"]["id"]
+        items_response = client.get(f"/api/v1/inventories/{inventory_id}/items", headers=headers)
+        assert items_response.status_code == 200
+        assert items_response.json()["total"] == 2
+
+        item_by_barcode = {
+            item["product_barcode"]: item for item in items_response.json()["items"]
+        }
+        assert item_by_barcode[existing_barcode]["system_quantity"] == 30
+        assert item_by_barcode[new_barcode]["system_quantity"] == 8
+    finally:
+        _cleanup(
+            tenant_ids=[tenant_id],
+            membership_ids=[membership_id],
+            product_ids=[existing_product_id],
         )
 
 

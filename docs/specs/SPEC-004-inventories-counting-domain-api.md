@@ -6,7 +6,7 @@
 |---|---|
 | ID | SPEC-004 |
 | Prioridade | P0 |
-| Status | In Progress (backend implementation complete) |
+| Status | Implemented (Closed 2026-04-06) |
 | Dono tecnico | Backend Lead |
 | Dono produto | Product Owner |
 | Dependencias | SPEC-001, SPEC-002 |

@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.inventory import Inventory
@@ -225,3 +226,51 @@ class InventoryRepository:
     def get_product_in_tenant(self, *, product_id: uuid.UUID, tenant_id: uuid.UUID) -> Product | None:
         stmt = select(Product).where(Product.id == product_id, Product.tenant_id == tenant_id)
         return self.db.scalar(stmt)
+
+    def list_products_by_identifiers(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        skus: set[str],
+        barcodes: set[str],
+    ) -> list[Product]:
+        identifier_filters = []
+        if skus:
+            identifier_filters.append(Product.sku.in_(skus))
+        if barcodes:
+            identifier_filters.append(Product.barcode.in_(barcodes))
+        if not identifier_filters:
+            return []
+
+        stmt = select(Product).where(
+            Product.tenant_id == tenant_id,
+            or_(*identifier_filters),
+        )
+        return list(self.db.scalars(stmt).all())
+
+    def create_product_for_import(
+        self,
+        *,
+        tenant_id: uuid.UUID,
+        name: str,
+        sku: str,
+        barcode: str,
+        category: str | None,
+        cost: Decimal | None,
+        quantity: int,
+    ) -> Product:
+        product = Product(
+            tenant_id=tenant_id,
+            name=name,
+            sku=sku,
+            barcode=barcode,
+            category=category,
+            active=True,
+            cost=cost,
+            price=None,
+            quantity=quantity,
+        )
+        self.db.add(product)
+        self.db.flush()
+        self.db.refresh(product)
+        return product
