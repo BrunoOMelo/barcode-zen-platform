@@ -1,3 +1,4 @@
+from app.models.audit_log import AuditLog
 from app.models.base import Base
 from app.models.inventory import Inventory
 from app.models.inventory_count import InventoryCount
@@ -9,6 +10,7 @@ from app.models.user_tenant_membership import UserTenantMembership
 
 __all__ = [
     "Base",
+    "AuditLog",
     "Inventory",
     "InventoryCount",
     "InventoryItem",

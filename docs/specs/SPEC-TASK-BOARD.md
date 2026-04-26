@@ -45,7 +45,7 @@ Quadro operacional para execucao das tarefas das specs.
 
 | Task | Spec | Dono sugerido | Resultado esperado |
 |---|---|---|---|
-| T006-01..T006-04 | SPEC-006 | Platform + Backend | Logs, metricas e auditoria ativos |
+| T006-01..T006-06 | SPEC-006 | Platform + Backend | Logs, metricas, auditoria, alertas e runbook concluidos |
 | T007-01..T007-04 | SPEC-007 | Platform | CI com gates obrigatorios |
 | T007-05..T007-06 | SPEC-007 | Platform | Deploy governado e rollback documentado |
 

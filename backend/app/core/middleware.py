@@ -11,8 +11,10 @@ from starlette.responses import JSONResponse, Response
 from app.core.auth import AuthenticatedUser
 from app.core.config import settings
 from app.core.logging import log_structured
+from app.core.metrics import observe_auth_rejection, observe_http_request, resolve_metrics_path
 from app.core.tenant import TenantContext
 from app.db.session import SessionLocal
+from app.services.audit_log_service import AuditLogService
 from app.services.tenant_context_service import TenantContextService
 
 
@@ -23,11 +25,13 @@ PUBLIC_PATHS = {
     "/api/v1/health",
     "/api/v1/health/live",
     "/api/v1/health/ready",
+    "/api/v1/metrics",
     "/api/v1/auth/login",
 }
 TENANT_OPTIONAL_PATHS = {
     "/api/v1/me/tenants",
 }
+MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 request_logger = logging.getLogger("app.request")
 
@@ -209,6 +213,12 @@ class RequestAuthMiddleware(BaseHTTPMiddleware):
             outcome=outcome,
             error_code=error_code,
         )
+        self._record_audit_event(
+            request=request,
+            status_code=response.status_code,
+            outcome=outcome,
+            error_code=error_code,
+        )
         return response
 
     def _log_request(
@@ -224,6 +234,17 @@ class RequestAuthMiddleware(BaseHTTPMiddleware):
         user_id = getattr(current_user, "user_id", None)
         tenant_id = getattr(request.state, "current_tenant_id", None)
         duration_ms = round((perf_counter() - started_at) * 1000, 2)
+        path_template = resolve_metrics_path(request)
+
+        observe_http_request(
+            method=request.method.upper(),
+            path=path_template,
+            status_code=status_code,
+            duration_ms=duration_ms,
+            outcome=outcome,
+        )
+        if outcome == "rejected" and error_code:
+            observe_auth_rejection(error_code=error_code)
 
         log_structured(
             request_logger,
@@ -233,6 +254,7 @@ class RequestAuthMiddleware(BaseHTTPMiddleware):
                 "request_id": getattr(request.state, "request_id", None),
                 "method": request.method.upper(),
                 "path": request.url.path,
+                "path_template": path_template,
                 "status_code": status_code,
                 "duration_ms": duration_ms,
                 "user_id": str(user_id) if user_id is not None else None,
@@ -241,6 +263,63 @@ class RequestAuthMiddleware(BaseHTTPMiddleware):
                 "error_code": error_code,
             },
         )
+
+    def _record_audit_event(
+        self,
+        *,
+        request: Request,
+        status_code: int,
+        outcome: str,
+        error_code: str | None,
+    ) -> None:
+        method = request.method.upper()
+        should_audit = method in MUTATING_METHODS or outcome == "rejected"
+        if not should_audit:
+            return
+
+        path_template = resolve_metrics_path(request)
+        current_user = getattr(request.state, "current_user", None)
+        user_id = getattr(current_user, "user_id", None)
+        tenant_id = getattr(request.state, "current_tenant_id", None)
+        request_id = getattr(request.state, "request_id", None)
+
+        event_type = "security.request_rejected" if outcome == "rejected" else "domain.mutation"
+        action = "rejected" if outcome == "rejected" else method.lower()
+
+        db = SessionLocal()
+        try:
+            audit_service = AuditLogService(db)
+            audit_service.record_event(
+                event_type=event_type,
+                action=action,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                request_id=request_id,
+                method=method,
+                path=path_template,
+                status_code=status_code,
+                outcome=outcome,
+                error_code=error_code,
+                details={
+                    "raw_path": request.url.path,
+                    "query_string": request.url.query or None,
+                },
+            )
+            db.commit()
+        except Exception as exc:  # pragma: no cover - audit must not break request flow
+            db.rollback()
+            log_structured(
+                request_logger,
+                level=logging.WARNING,
+                fields={
+                    "event": "audit_log_write_failed",
+                    "request_id": request_id,
+                    "path": request.url.path,
+                    "error": str(exc),
+                },
+            )
+        finally:
+            db.close()
 
 
 def resolve_tenant_context(user_id: UUID, tenant_id: UUID) -> TenantContext | None:
